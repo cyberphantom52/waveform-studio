@@ -171,7 +171,7 @@ export function nextPowerOf2(n: number): number {
  */
 export function zeroPad(
   input: Float64Array,
-  targetLength: number
+  targetLength: number,
 ): Float64Array {
   if (targetLength <= input.length) {
     return new Float64Array(input);
@@ -249,7 +249,7 @@ export function fft(input: Float64Array): Complex[] {
   if ((N & (N - 1)) !== 0) {
     throw new Error(
       `FFT input length must be a power of 2, got ${N}. ` +
-        `Use zeroPad(input, nextPowerOf2(input.length)) first.`
+        `Use zeroPad(input, nextPowerOf2(input.length)) first.`,
     );
   }
 
@@ -349,7 +349,7 @@ export interface SpectrumResult {
 export function computeSpectrum(
   samples: Int8Array | Float64Array,
   sampleRate: number,
-  windowType: WindowType = "hann"
+  windowType: WindowType = "hann",
 ): SpectrumResult {
   // Step 1: Convert to Float64Array
   let signal: Float64Array;
@@ -492,7 +492,7 @@ export interface PeakDetectionOptions {
  */
 export function findSpectralPeaks(
   spectrum: SpectrumResult,
-  options?: PeakDetectionOptions
+  options?: PeakDetectionOptions,
 ): SpectralPeak[] {
   const maxPeaks = options?.maxPeaks ?? 8;
   const minDb = options?.minDb ?? -40.0;
@@ -747,10 +747,195 @@ export function computeRegionSpectrum(
   start: number,
   end: number,
   sampleRate: number,
-  windowType: WindowType = "hann"
+  windowType: WindowType = "hann",
 ): SpectrumResult {
   const clampedStart = Math.max(0, Math.min(start, samples.length));
   const clampedEnd = Math.max(clampedStart, Math.min(end, samples.length));
   const region = samples.slice(clampedStart, clampedEnd);
   return computeSpectrum(region, sampleRate, windowType);
+}
+
+// ---------------------------------------------------------------------------
+// Complex-to-complex FFT (internal helper)
+// ---------------------------------------------------------------------------
+
+/**
+ * Complex-to-complex FFT (internal helper).
+ * Operates in-place on separate real/imaginary arrays.
+ * @param re - Real parts (modified in place).
+ * @param im - Imaginary parts (modified in place).
+ * @param inverse - If true, compute IFFT (uses +sin twiddle, divides by N).
+ */
+function fftComplex(
+  re: Float64Array,
+  im: Float64Array,
+  inverse: boolean,
+): void {
+  const N = re.length;
+  if (N <= 1) return;
+  if ((N & (N - 1)) !== 0) {
+    throw new Error(`fftComplex: length must be a power of 2, got ${N}`);
+  }
+
+  const log2n = Math.round(Math.log2(N));
+
+  // Bit-reversal permutation
+  for (let i = 0; i < N; i++) {
+    const j = bitReverse(i, log2n);
+    if (j > i) {
+      // Swap re
+      let tmp = re[i];
+      re[i] = re[j];
+      re[j] = tmp;
+      // Swap im
+      tmp = im[i];
+      im[i] = im[j];
+      im[j] = tmp;
+    }
+  }
+
+  // Butterfly stages
+  const sign = inverse ? 1.0 : -1.0;
+  for (let s = 1; s <= log2n; s++) {
+    const m = 1 << s;
+    const halfM = m >> 1;
+    const wRe = Math.cos((2.0 * Math.PI) / m);
+    const wIm = sign * Math.sin((2.0 * Math.PI) / m);
+
+    for (let k = 0; k < N; k += m) {
+      let twRe = 1.0;
+      let twIm = 0.0;
+
+      for (let j = 0; j < halfM; j++) {
+        const evenIdx = k + j;
+        const oddIdx = k + j + halfM;
+
+        const tRe = twRe * re[oddIdx] - twIm * im[oddIdx];
+        const tIm = twRe * im[oddIdx] + twIm * re[oddIdx];
+
+        re[oddIdx] = re[evenIdx] - tRe;
+        im[oddIdx] = im[evenIdx] - tIm;
+        re[evenIdx] = re[evenIdx] + tRe;
+        im[evenIdx] = im[evenIdx] + tIm;
+
+        const nextTwRe = twRe * wRe - twIm * wIm;
+        const nextTwIm = twRe * wIm + twIm * wRe;
+        twRe = nextTwRe;
+        twIm = nextTwIm;
+      }
+    }
+  }
+
+  // Scale by 1/N for inverse
+  if (inverse) {
+    for (let i = 0; i < N; i++) {
+      re[i] /= N;
+      im[i] /= N;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inverse FFT
+// ---------------------------------------------------------------------------
+
+/**
+ * Inverse FFT: converts a complex frequency-domain spectrum back to
+ * real-valued time-domain samples.
+ *
+ * Input length must be a power of 2.
+ *
+ * @param spectrum - Complex frequency-domain values (length must be power of 2).
+ * @returns Real-valued time-domain samples.
+ */
+export function ifft(spectrum: Complex[]): Float64Array {
+  const N = spectrum.length;
+  if (N === 0) return new Float64Array(0);
+  if (N === 1) return new Float64Array([spectrum[0].re]);
+
+  const re = new Float64Array(N);
+  const im = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    re[i] = spectrum[i].re;
+    im[i] = spectrum[i].im;
+  }
+
+  fftComplex(re, im, true);
+
+  return re; // imaginary parts should be ~0 for real-valued signals
+}
+
+// ---------------------------------------------------------------------------
+// Spectral filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply a spectral filter to a time-domain signal.
+ *
+ * Steps:
+ * 1. Window and zero-pad the input to next power of 2
+ * 2. Forward FFT
+ * 3. Multiply each bin's magnitude by the corresponding gain from the filter curve
+ * 4. Inverse FFT
+ * 5. Truncate back to original length
+ *
+ * The `filterGains` array maps frequency bins to gain multipliers.
+ * It should have length = fftSize/2 + 1 (single-sided spectrum).
+ * Gains are linearly interpolated if the filterGains length doesn't match.
+ *
+ * @param samples - Input signal (Int8Array or Float64Array).
+ * @param sampleRate - Sample rate in Hz.
+ * @param filterGains - Gain multiplier per frequency bin (0.0 = silence, 1.0 = pass, >1 = boost).
+ * @returns Filtered signal as Float64Array (same length as input, NOT clamped to int8).
+ */
+export function applySpectralFilter(
+  samples: Int8Array | Float64Array,
+  sampleRate: number,
+  filterGains: Float64Array,
+): Float64Array {
+  // Convert to Float64
+  let signal: Float64Array;
+  if (samples instanceof Int8Array) {
+    signal = new Float64Array(samples.length);
+    for (let i = 0; i < samples.length; i++) signal[i] = samples[i];
+  } else {
+    signal = new Float64Array(samples);
+  }
+
+  const originalLength = signal.length;
+  if (originalLength === 0) return new Float64Array(0);
+
+  // Zero-pad to power of 2
+  const fftSize = nextPowerOf2(originalLength);
+  const padded = zeroPad(signal, fftSize);
+
+  // Forward FFT (using the existing real-input fft)
+  const spectrum = fft(padded);
+
+  // Apply filter gains to the spectrum
+  // filterGains covers bins 0..fftSize/2 (single-sided)
+  const numBins = (fftSize >> 1) + 1;
+
+  for (let i = 0; i < spectrum.length; i++) {
+    // Map bin index to the single-sided index
+    const singleSidedIdx = i <= fftSize / 2 ? i : fftSize - i;
+
+    // Interpolate gain from the filterGains array
+    const filterLen = filterGains.length;
+    const normalizedPos = singleSidedIdx / (numBins - 1); // 0..1
+    const filterPos = normalizedPos * (filterLen - 1);
+    const lo = Math.floor(filterPos);
+    const hi = Math.min(lo + 1, filterLen - 1);
+    const frac = filterPos - lo;
+    const gain = filterGains[lo] * (1 - frac) + filterGains[hi] * frac;
+
+    spectrum[i].re *= gain;
+    spectrum[i].im *= gain;
+  }
+
+  // Inverse FFT
+  const filtered = ifft(spectrum);
+
+  // Truncate to original length
+  return filtered.subarray(0, originalLength);
 }

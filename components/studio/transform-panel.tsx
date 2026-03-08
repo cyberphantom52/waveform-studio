@@ -250,7 +250,10 @@ function EnvelopeControls({
             value={pt.curve}
             onValueChange={(v) => {
               const pts = [...params.points];
-              pts[i] = { ...pts[i], curve: v as "linear" | "exponential" | "logarithmic" };
+              pts[i] = {
+                ...pts[i],
+                curve: v as "linear" | "exponential" | "logarithmic",
+              };
               onChange({ points: pts });
             }}
           >
@@ -271,7 +274,9 @@ function EnvelopeControls({
             disabled={params.points.length <= 2}
             onClick={() =>
               onChange({
-                points: params.points.filter((_, pointIndex) => pointIndex !== i),
+                points: params.points.filter(
+                  (_, pointIndex) => pointIndex !== i,
+                ),
               })
             }
           >
@@ -296,6 +301,85 @@ function EnvelopeControls({
   );
 }
 
+function SpectralFilterControls({
+  params,
+  onChange,
+}: {
+  params: TransformParams["spectralFilter"];
+  onChange: (p: TransformParams["spectralFilter"]) => void;
+}) {
+  const pts = [...params.points].sort((a, b) => a.frequency - b.frequency);
+  return (
+    <div className="space-y-3">
+      <label className="text-xs font-medium">Filter Points</label>
+      {pts.map((pt, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div className="flex-1 space-y-1">
+            <div className="flex items-center gap-2">
+              <label className="text-xs w-12">Hz</label>
+              <Slider
+                min={0}
+                max={8000}
+                step={10}
+                value={[pt.frequency]}
+                onValueChange={([v]) => {
+                  const next = [...pts];
+                  next[i] = { ...next[i], frequency: v };
+                  onChange({ points: next });
+                }}
+              />
+              <span className="text-xs tabular-nums w-14 text-right">
+                {pt.frequency}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs w-12">Gain</label>
+              <Slider
+                min={0}
+                max={2}
+                step={0.01}
+                value={[pt.gain]}
+                onValueChange={([v]) => {
+                  const next = [...pts];
+                  next[i] = { ...next[i], gain: v };
+                  onChange({ points: next });
+                }}
+              />
+              <span className="text-xs tabular-nums w-14 text-right">
+                {pt.gain.toFixed(2)}
+              </span>
+            </div>
+          </div>
+          {pts.length > 2 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => {
+                const next = pts.filter((_, j) => j !== i);
+                onChange({ points: next });
+              }}
+            >
+              ×
+            </Button>
+          )}
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          const maxFreq = pts.length > 0 ? pts[pts.length - 1].frequency : 4000;
+          const newFreq = Math.min(maxFreq + 500, 8000);
+          onChange({ points: [...pts, { frequency: newFreq, gain: 1.0 }] });
+        }}
+      >
+        Add Point
+      </Button>
+    </div>
+  );
+}
+
 const CONTROLS: Record<
   TransformType,
   React.ComponentType<{ params: never; onChange: (p: never) => void }>
@@ -308,6 +392,7 @@ const CONTROLS: Record<
   tailTrim: TailTrimControls as never,
   smoothing: SmoothingControls as never,
   deadzone: DeadzoneControls as never,
+  spectralFilter: SpectralFilterControls as never,
 };
 
 export function TransformPanel() {
@@ -323,7 +408,7 @@ export function TransformPanel() {
       effect.waveform.samples,
       effect.waveform.sampleRate,
       effect.chain,
-      effect.regions
+      effect.regions,
     );
     dispatch({
       type: "SET_REMASTERED",

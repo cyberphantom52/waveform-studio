@@ -26,6 +26,7 @@ import {
   Scissors,
   Waves,
   CircleDot,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ const TRANSFORM_ICONS: Record<TransformType, React.ElementType> = {
   tailTrim: Scissors,
   smoothing: Waves,
   deadzone: CircleDot,
+  spectralFilter: Filter,
 };
 
 const TRANSFORM_LABELS: Record<TransformType, string> = {
@@ -49,6 +51,7 @@ const TRANSFORM_LABELS: Record<TransformType, string> = {
   tailTrim: "Tail Trim",
   smoothing: "Smoothing",
   deadzone: "Deadzone",
+  spectralFilter: "Spectral Filter",
 };
 
 const ALL_TRANSFORMS: TransformType[] = [
@@ -60,6 +63,7 @@ const ALL_TRANSFORMS: TransformType[] = [
   "tailTrim",
   "smoothing",
   "deadzone",
+  "spectralFilter",
 ];
 
 export function EffectChain() {
@@ -125,7 +129,7 @@ export function EffectChain() {
                       "group flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-xs transition-colors",
                       isActive
                         ? "bg-accent text-accent-foreground"
-                        : "hover:bg-muted"
+                        : "hover:bg-muted",
                     )}
                     onClick={() =>
                       dispatch({ type: "SET_ACTIVE_TRANSFORM", index: i })
@@ -136,7 +140,7 @@ export function EffectChain() {
                     <span
                       className={cn(
                         "flex-1 truncate",
-                        !step.enabled && "line-through opacity-50"
+                        !step.enabled && "line-through opacity-50",
                       )}
                     >
                       {TRANSFORM_LABELS[step.type]}
