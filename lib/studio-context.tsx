@@ -37,7 +37,7 @@ export interface StudioEffect {
   waveform: WaveformData;
   chain: TransformStep[];
   regions: Region[];
-  remastered: Uint8Array | null;
+  remastered: Int8Array | null;
   metadata?: EffectMetadata;
   familyTag: string;
   playRateHz: number;
@@ -94,7 +94,7 @@ type Action =
   | {
       type: "SET_REMASTERED";
       index: number;
-      data: Uint8Array | null;
+      data: Int8Array | null;
       remasterInfo: EffectRemasterInfo | null;
     }
   | { type: "SET_VIEW_MODE"; mode: StudioState["viewMode"] }
@@ -142,11 +142,11 @@ function cloneEffect(effect: StudioEffect): StudioEffect {
   return {
     waveform: {
       ...effect.waveform,
-      samples: new Uint8Array(effect.waveform.samples),
+      samples: new Int8Array(effect.waveform.samples),
     },
     chain: effect.chain.map(cloneTransformStep),
     regions: effect.regions.map(cloneRegion),
-    remastered: effect.remastered ? new Uint8Array(effect.remastered) : null,
+    remastered: effect.remastered ? new Int8Array(effect.remastered) : null,
     metadata: effect.metadata ? { ...effect.metadata } : undefined,
     familyTag: effect.familyTag,
     playRateHz: effect.playRateHz,
@@ -395,7 +395,7 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       if (!effect) return state;
       const updated = {
         ...effect,
-        remastered: action.data ? new Uint8Array(action.data) : null,
+        remastered: action.data ? new Int8Array(action.data) : null,
         remasterInfo: action.remasterInfo,
       };
       const effects = state.effects.map((e, i) =>

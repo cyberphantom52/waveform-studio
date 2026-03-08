@@ -1,7 +1,7 @@
 export interface WaveformData {
   id: string;
   name: string;
-  samples: Uint8Array;
+  samples: Int8Array;
   sampleRate: number;
 }
 
@@ -14,7 +14,7 @@ export interface EffectMetadata {
 }
 
 export function parseBinFile(buffer: ArrayBuffer, name: string): WaveformData {
-  const samples = new Uint8Array(buffer);
+  const samples = new Int8Array(buffer);
   return {
     id: crypto.randomUUID(),
     name: name.replace(/\.bin$/i, ""),
@@ -62,12 +62,12 @@ export function parseEffectJson(
   return map;
 }
 
-export function waveformToArrayBuffer(samples: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(samples.byteLength);
-  new Uint8Array(buf).set(samples);
-  return buf;
+export function waveformToArrayBuffer(samples: Int8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(samples.byteLength);
+  new Int8Array(buffer).set(samples);
+  return buffer;
 }
 
-export function cloneSamples(samples: Uint8Array): Uint8Array {
-  return new Uint8Array(samples);
+export function cloneSamples(samples: Int8Array): Int8Array {
+  return new Int8Array(samples);
 }

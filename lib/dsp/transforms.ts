@@ -1,18 +1,18 @@
 /**
- * All transform functions operate on Float64Array (0-255 range) internally
- * and return Float64Array. Conversion to Uint8Array happens at the end.
+ * All transform functions operate on Float64Array in signed 8-bit sample space
+ * and clamp back into the int8 range on output.
  */
 
-export function toFloat(samples: Uint8Array): Float64Array {
+export function toFloat(samples: Int8Array): Float64Array {
   const out = new Float64Array(samples.length);
   for (let i = 0; i < samples.length; i++) out[i] = samples[i];
   return out;
 }
 
-export function toUint8(samples: Float64Array): Uint8Array {
-  const out = new Uint8Array(samples.length);
+export function toInt8(samples: Float64Array): Int8Array {
+  const out = new Int8Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
-    out[i] = Math.max(0, Math.min(255, Math.round(samples[i])));
+    out[i] = Math.max(-128, Math.min(127, Math.round(samples[i])));
   }
   return out;
 }
@@ -24,9 +24,8 @@ export function applyGain(
   const out = new Float64Array(samples.length);
   let clipped = 0;
   for (let i = 0; i < samples.length; i++) {
-    const centered = samples[i] - 128;
-    const amplified = centered * gain + 128;
-    if (amplified < 0 || amplified > 255) clipped++;
+    const amplified = samples[i] * gain;
+    if (amplified < -128 || amplified > 127) clipped++;
     out[i] = amplified;
   }
   return { result: out, clipped };
@@ -38,7 +37,7 @@ export function applyPitchShift(
 ): Float64Array {
   const ratio = Math.pow(2, semitones / 12);
   const newLength = Math.round(samples.length / ratio);
-  if (newLength < 2) return new Float64Array([128]);
+  if (newLength < 2) return new Float64Array([0]);
 
   const out = new Float64Array(newLength);
 
@@ -121,8 +120,7 @@ export function applyEnvelope(
   for (let i = 0; i < samples.length; i++) {
     const pos = i / (samples.length - 1 || 1);
     const env = interpolateEnvelope(points, pos);
-    const centered = samples[i] - 128;
-    out[i] = centered * env + 128;
+    out[i] = samples[i] * env;
   }
   return out;
 }
@@ -135,8 +133,7 @@ export function applyAttack(
   const len = Math.min(attackSamples, samples.length);
   for (let i = 0; i < len; i++) {
     const t = i / len;
-    const centered = out[i] - 128;
-    out[i] = centered * t + 128;
+    out[i] *= t;
   }
   return out;
 }
@@ -150,8 +147,7 @@ export function applyDecay(
   const start = samples.length - len;
   for (let i = start; i < samples.length; i++) {
     const t = (samples.length - 1 - i) / len;
-    const centered = out[i] - 128;
-    out[i] = centered * t + 128;
+    out[i] *= t;
   }
   return out;
 }
@@ -163,13 +159,13 @@ export function applyTailTrim(
   const out = new Float64Array(samples);
   let lastAbove = samples.length - 1;
   for (let i = samples.length - 1; i >= 0; i--) {
-    if (Math.abs(samples[i] - 128) > threshold) {
+    if (Math.abs(samples[i]) > threshold) {
       lastAbove = i;
       break;
     }
   }
   for (let i = lastAbove + 1; i < out.length; i++) {
-    out[i] = 128;
+    out[i] = 0;
   }
   return out;
 }
@@ -198,7 +194,7 @@ export function applyDeadzone(
 ): Float64Array {
   const out = new Float64Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
-    out[i] = Math.abs(samples[i] - 128) < threshold ? 128 : samples[i];
+    out[i] = Math.abs(samples[i]) < threshold ? 0 : samples[i];
   }
   return out;
 }
@@ -231,10 +227,10 @@ export interface TransformStep {
 }
 
 export function applyTransformChain(
-  input: Uint8Array,
+  input: Int8Array,
   chain: TransformStep[],
   sampleRate: number = 8000
-): { result: Uint8Array; clippedTotal: number } {
+): { result: Int8Array; clippedTotal: number } {
   let samples = toFloat(input);
   let clippedTotal = 0;
 
@@ -293,7 +289,7 @@ export function applyTransformChain(
     }
   }
 
-  return { result: toUint8(samples), clippedTotal };
+  return { result: toInt8(samples), clippedTotal };
 }
 
 export function getDefaultParams(type: TransformType): TransformParams[TransformType] {

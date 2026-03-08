@@ -5,7 +5,7 @@ import { applyTransformChain } from "./transforms";
 import { computeStats, type WaveformStats } from "./stats";
 
 export interface RemasterResult {
-  result: Uint8Array;
+  result: Int8Array;
   clippedSamples: number;
   originalStats: WaveformStats;
   remasteredStats: WaveformStats;
@@ -49,7 +49,7 @@ export function sanitizeRegion(region: Region, sampleCount: number): Region {
 }
 
 export function computeRemasteredWaveform(
-  original: Uint8Array,
+  original: Int8Array,
   sampleRate: number,
   chain: TransformStep[],
   regions: Region[]

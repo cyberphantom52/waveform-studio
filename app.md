@@ -3,7 +3,7 @@ Here's what Waveform Studio does:
 It's a browser-based waveform remastering tool designed specifically for tuning OPlus (OnePlus) vibrator haptic effect .bin files.
 
 What it does in detail:
-Import haptic waveform data -- You drag-and-drop .bin files that contain raw 8-bit unsigned byte waveforms (the kind used to drive a phone's vibration motor). You can optionally include a vibrator_effect.json metadata file that maps filenames to effect IDs, families, and styles.
+Import haptic waveform data -- You drag-and-drop .bin files that contain raw signed 8-bit waveform samples, one sample per byte (the kind used to drive a phone's vibration motor). You can optionally include a vibrator_effect.json metadata file that maps filenames to effect IDs, families, and styles.
 
 Visualize waveforms -- It renders three canvas views for each effect:
 
