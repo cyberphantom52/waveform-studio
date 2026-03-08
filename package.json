@@ -2,11 +2,14 @@
   "name": "waveform",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.9.4",
   "scripts": {
+    "setup:agent": "bash ./scripts/bootstrap-agent.sh",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify": "npm run lint && npm run build"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
@@ -32,5 +35,9 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10"
   }
 }

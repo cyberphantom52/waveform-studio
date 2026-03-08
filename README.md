@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Waveform Studio
 
-## Getting Started
+Next.js 16 app for importing, inspecting, transforming, and exporting haptic waveform `.bin` files.
 
-First, run the development server:
+## Runtime and package manager
+
+- Node: `22.21.1` (see `.nvmrc`)
+- Minimum supported Node: `20.9+`
+- Package manager: `npm`
+- Lockfile: `package-lock.json`
+
+## Recommended setup
+
+For local work and cloud agents, prefer:
+
+```bash
+npm ci
+```
+
+That uses the committed lockfile and gives reproducible installs.
+
+## Agent/bootstrap workflow
+
+To provision the repo and verify it is ready for work:
+
+```bash
+npm run setup:agent
+```
+
+That script will:
+
+1. Run `npm ci` when `package-lock.json` is present
+2. Fall back to `npm install` otherwise
+3. Run `npm run lint`
+4. Run `npm run build`
+
+If an environment only wants dependencies installed without lint/build verification:
+
+```bash
+VERIFY_PROJECT=0 npm run setup:agent
+```
+
+## Daily commands
+
+Start the dev server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Run lint:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run lint
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Run a production build:
 
-## Learn More
+```bash
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+Run the full verification pass:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run verify
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Serve the production build:
 
-## Deploy on Vercel
+```bash
+npm run start
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open [http://localhost:3000](http://localhost:3000) after starting the app.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Environment notes
+
+- No project secrets are required for install, lint, build, or local dev
+- The app uses `next/font/google`, so preserving `.next/cache` helps repeated builds
+- Caching `node_modules` and `~/.npm` improves cloud-agent startup times
