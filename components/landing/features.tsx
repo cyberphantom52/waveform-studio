@@ -16,7 +16,7 @@ const FEATURES = [
     icon: Upload,
     title: "Import .bin Waveforms",
     description:
-      "Drag-and-drop raw 8-bit unsigned byte .bin files. Optional vibrator_effect.json metadata for effect IDs, families, and styles.",
+      "Drag-and-drop raw signed 8-bit .bin waveforms, one sample per byte. Optional vibrator_effect.json metadata for effect IDs, families, and styles.",
     span: "col-span-1",
   },
   {

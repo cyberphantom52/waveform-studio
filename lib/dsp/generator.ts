@@ -15,9 +15,9 @@ export interface GeneratorParams {
   phase: number; // 0-1
 }
 
-export function generateWaveform(params: GeneratorParams): Uint8Array {
+export function generateWaveform(params: GeneratorParams): Int8Array {
   const { shape, frequency, amplitude, duration, sampleRate, phase } = params;
-  const out = new Uint8Array(duration);
+  const out = new Int8Array(duration);
 
   for (let i = 0; i < duration; i++) {
     const t = i / sampleRate;
@@ -50,10 +50,7 @@ export function generateWaveform(params: GeneratorParams): Uint8Array {
         break;
     }
 
-    out[i] = Math.max(
-      0,
-      Math.min(255, Math.round(value * amplitude * 127 + 128))
-    );
+    out[i] = Math.max(-128, Math.min(127, Math.round(value * amplitude * 127)));
   }
 
   return out;

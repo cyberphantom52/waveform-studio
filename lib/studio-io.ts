@@ -76,7 +76,7 @@ export function promptDownload(filename: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
-export function downloadWaveformBin(filename: string, samples: Uint8Array) {
+export function downloadWaveformBin(filename: string, samples: Int8Array) {
   promptDownload(
     filename,
     new Blob([waveformToArrayBuffer(samples)], {
@@ -85,7 +85,7 @@ export function downloadWaveformBin(filename: string, samples: Uint8Array) {
   );
 }
 
-async function sha256Hex(data: Uint8Array): Promise<string> {
+async function sha256Hex(data: Int8Array): Promise<string> {
   const normalized = new Uint8Array(data.length);
   normalized.set(data);
   const digest = await crypto.subtle.digest("SHA-256", normalized);

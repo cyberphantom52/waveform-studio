@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import * as d3 from "d3";
 import { generateWaveform } from "@/lib/dsp/generator";
-import { toFloat, applyGain, applySmoothing, toUint8 } from "@/lib/dsp/transforms";
+import { toFloat, applyGain, applySmoothing, toInt8 } from "@/lib/dsp/transforms";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 
@@ -38,7 +38,7 @@ export function WaveformDemo() {
     let processed = toFloat(original);
     processed = applyGain(processed, gain).result;
     if (smoothing > 1) processed = applySmoothing(processed, smoothing);
-    const remastered = toUint8(processed);
+    const remastered = toInt8(processed);
 
     const margin = { top: 8, right: 8, bottom: 8, left: 8 };
     const innerW = w - margin.left - margin.right;
@@ -49,14 +49,14 @@ export function WaveformDemo() {
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
     const x = d3.scaleLinear().domain([0, original.length - 1]).range([0, innerW]);
-    const y = d3.scaleLinear().domain([0, 255]).range([innerH, 0]);
+    const y = d3.scaleLinear().domain([-128, 127]).range([innerH, 0]);
 
     // Center line
     g.append("line")
       .attr("x1", 0)
       .attr("x2", innerW)
-      .attr("y1", y(128))
-      .attr("y2", y(128))
+      .attr("y1", y(0))
+      .attr("y2", y(0))
       .attr("stroke", "var(--waveform-grid)")
       .attr("stroke-width", 0.5);
 

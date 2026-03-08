@@ -60,7 +60,7 @@ export function WaveformCanvas() {
     return () => observer.disconnect();
   }, []);
 
-  const original = effect?.waveform.samples ?? new Uint8Array();
+  const original = effect?.waveform.samples ?? new Int8Array();
   const remastered = effect?.remastered ?? original;
   const baseLength = Math.max(original.length, remastered.length, 1);
   const startSample = Math.floor(state.zoom.start * baseLength);
@@ -75,7 +75,7 @@ export function WaveformCanvas() {
   );
   const visibleDiff = computeDelta(
     visibleOriginal,
-    new Uint8Array(visibleRemastered)
+    visibleRemastered
   );
 
   const margin = { top: 12, right: 8, bottom: 26, left: 42 };
@@ -99,8 +99,8 @@ export function WaveformCanvas() {
         visibleOriginal,
         innerWidth,
         innerHeight,
-        0,
-        255,
+        -128,
+        127,
         state.canvasConfig.density
       ),
     [visibleOriginal, innerWidth, innerHeight, state.canvasConfig.density]
@@ -111,8 +111,8 @@ export function WaveformCanvas() {
         visibleRemastered,
         innerWidth,
         innerHeight,
-        0,
-        255,
+        -128,
+        127,
         state.canvasConfig.density
       ),
     [visibleRemastered, innerWidth, innerHeight, state.canvasConfig.density]
@@ -123,8 +123,8 @@ export function WaveformCanvas() {
         visibleDiff,
         innerWidth,
         innerHeight,
-        -128,
-        128,
+        -255,
+        255,
         state.canvasConfig.density
       ),
     [visibleDiff, innerWidth, innerHeight, state.canvasConfig.density]
@@ -237,19 +237,19 @@ export function WaveformCanvas() {
             }}
           >
             <g transform={`translate(${margin.left},${margin.top})`}>
-              {[0, 64, 128, 192, 255].map((tick) => (
+              {[-128, -64, 0, 64, 127].map((tick) => (
                 <g key={tick}>
                   <line
                     x1={0}
                     x2={innerWidth}
-                    y1={yForValue(tick, 0, 255)}
-                    y2={yForValue(tick, 0, 255)}
+                    y1={yForValue(tick, -128, 127)}
+                    y2={yForValue(tick, -128, 127)}
                     stroke="var(--waveform-grid)"
-                    strokeWidth={tick === 128 ? 1 : 0.5}
+                    strokeWidth={tick === 0 ? 1 : 0.5}
                   />
                   <text
                     x={-8}
-                    y={yForValue(tick, 0, 255) + 3}
+                    y={yForValue(tick, -128, 127) + 3}
                     textAnchor="end"
                     fill="var(--muted-foreground)"
                     fontSize="9"
@@ -263,8 +263,8 @@ export function WaveformCanvas() {
                 <line
                   x1={0}
                   x2={innerWidth}
-                  y1={yForValue(0, -128, 128)}
-                  y2={yForValue(0, -128, 128)}
+                  y1={yForValue(0, -255, 255)}
+                  y2={yForValue(0, -255, 255)}
                   stroke="var(--waveform-grid)"
                   strokeWidth={1}
                 />

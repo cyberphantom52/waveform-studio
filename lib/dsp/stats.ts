@@ -18,7 +18,7 @@ export interface WaveformStats {
 }
 
 export function computeStats(
-  samples: Uint8Array,
+  samples: Int8Array,
   sampleRate: number = 8000
 ): WaveformStats {
   const n = samples.length;
@@ -55,7 +55,7 @@ export function computeStats(
   let lastNonZeroIndex = -1;
 
   for (let i = 0; i < n; i++) {
-    const centered = samples[i] - 128;
+    const centered = samples[i];
     const abs = Math.abs(centered);
 
     sumSquares += centered * centered;
@@ -63,7 +63,7 @@ export function computeStats(
     if (abs > peak) peak = abs;
     if (centered < minSigned) minSigned = centered;
     if (centered > maxSigned) maxSigned = centered;
-    if (samples[i] === 0 || samples[i] === 255) clipping++;
+    if (samples[i] === -128 || samples[i] === 127) clipping++;
     if (centered !== 0) {
       nonZeroSampleCount++;
       if (firstNonZeroIndex === -1) firstNonZeroIndex = i;
@@ -71,7 +71,7 @@ export function computeStats(
     }
 
     if (i > 0) {
-      const prev = samples[i - 1] - 128;
+      const prev = samples[i - 1];
       if ((prev >= 0 && centered < 0) || (prev < 0 && centered >= 0)) {
         zeroCrossings++;
       }
@@ -105,8 +105,8 @@ export function computeStats(
 }
 
 export function computeDelta(
-  original: Uint8Array,
-  remastered: Uint8Array
+  original: Int8Array,
+  remastered: Int8Array
 ): Float64Array {
   const len = Math.min(original.length, remastered.length);
   const delta = new Float64Array(len);

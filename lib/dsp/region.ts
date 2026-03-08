@@ -19,7 +19,7 @@ export interface Region {
 }
 
 export interface RegionApplyResult {
-  result: Uint8Array<ArrayBufferLike>;
+  result: Int8Array;
   clippedTotal: number;
 }
 
@@ -57,13 +57,13 @@ function buildRegionChain(region: Region): TransformStep[] {
 }
 
 function crossfadeBlend(
-  base: Uint8Array<ArrayBufferLike>,
-  regionResult: Uint8Array<ArrayBufferLike>,
+  base: Int8Array,
+  regionResult: Int8Array,
   regionStart: number,
   regionEnd: number,
   crossfade: number
 ) {
-  const out = new Uint8Array(base.length);
+  const out = new Int8Array(base.length);
   out.set(base);
   const regionLength = regionEnd - regionStart;
   if (regionLength <= 0) return out;
@@ -89,10 +89,10 @@ function crossfadeBlend(
 }
 
 export function applyRegions(
-  samples: Uint8Array<ArrayBufferLike>,
+  samples: Int8Array,
   regions: Region[]
 ): RegionApplyResult {
-  let result: Uint8Array<ArrayBufferLike> = Uint8Array.from(samples);
+  let result: Int8Array = Int8Array.from(samples);
   let clippedTotal = 0;
 
   const sorted = [...regions].sort((a, b) => a.start - b.start);
