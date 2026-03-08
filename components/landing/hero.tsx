@@ -11,7 +11,7 @@ export function Hero() {
   const containerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<number>(0);
 
-  const animate = useCallback(() => {
+  const animate = useCallback(function animateFrame() {
     if (!svgRef.current || !containerRef.current) return;
 
     const svg = d3.select(svgRef.current);
@@ -98,7 +98,7 @@ export function Hero() {
       .attr("stroke-width", 0.5)
       .attr("opacity", 0.3);
 
-    frameRef.current = requestAnimationFrame(animate);
+    frameRef.current = requestAnimationFrame(animateFrame);
   }, []);
 
   useEffect(() => {

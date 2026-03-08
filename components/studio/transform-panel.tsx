@@ -2,7 +2,7 @@
 
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import type { TransformType, TransformParams } from "@/lib/dsp/transforms";
-import { applyTransformChain } from "@/lib/dsp/transforms";
+import { computeRemasteredWaveform } from "@/lib/dsp/remaster";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Play } from "lucide-react";
+import { Play, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect } from "react";
 
 function GainControls({
@@ -86,14 +86,14 @@ function AttackControls({
       </label>
       <Slider
         min={0}
-        max={2000}
-        step={10}
-        value={[params.samples]}
-        onValueChange={([v]) => onChange({ samples: v })}
+        max={500}
+        step={1}
+        value={[params.durationMs]}
+        onValueChange={([v]) => onChange({ durationMs: v })}
         className="flex-1"
       />
       <span className="w-16 text-right text-xs tabular-nums">
-        {params.samples} smp
+        {params.durationMs}ms
       </span>
     </div>
   );
@@ -113,14 +113,14 @@ function DecayControls({
       </label>
       <Slider
         min={0}
-        max={2000}
-        step={10}
-        value={[params.samples]}
-        onValueChange={([v]) => onChange({ samples: v })}
+        max={500}
+        step={1}
+        value={[params.durationMs]}
+        onValueChange={([v]) => onChange({ durationMs: v })}
         className="flex-1"
       />
       <span className="w-16 text-right text-xs tabular-nums">
-        {params.samples} smp
+        {params.durationMs}ms
       </span>
     </div>
   );
@@ -214,6 +214,9 @@ function EnvelopeControls({
   params: TransformParams["envelope"];
   onChange: (p: TransformParams["envelope"]) => void;
 }) {
+  const sortPoints = (points: TransformParams["envelope"]["points"]) =>
+    [...points].sort((left, right) => left.position - right.position);
+
   return (
     <div className="flex flex-col gap-2">
       {params.points.map((pt, i) => (
@@ -227,7 +230,7 @@ function EnvelopeControls({
             onValueChange={([v]) => {
               const pts = [...params.points];
               pts[i] = { ...pts[i], position: v };
-              onChange({ points: pts });
+              onChange({ points: sortPoints(pts) });
             }}
             className="flex-1"
           />
@@ -262,16 +265,28 @@ function EnvelopeControls({
               </SelectGroup>
             </SelectContent>
           </Select>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            disabled={params.points.length <= 2}
+            onClick={() =>
+              onChange({
+                points: params.points.filter((_, pointIndex) => pointIndex !== i),
+              })
+            }
+          >
+            <Trash2 className="size-3" />
+          </Button>
         </div>
       ))}
       <Button
         variant="outline"
         size="xs"
         onClick={() => {
-          const pts = [
+          const pts = sortPoints([
             ...params.points,
             { position: 0.5, amplitude: 1, curve: "linear" as const },
-          ];
+          ]);
           onChange({ points: pts });
         }}
       >
@@ -298,24 +313,37 @@ const CONTROLS: Record<
 export function TransformPanel() {
   const state = useStudio();
   const dispatch = useStudioDispatch();
-  const effect = state.effects[state.activeEffectIndex];
+  const effectIndex = state.activeEffectIndex;
+  const effect = state.effects[effectIndex];
   const step = effect?.chain[state.activeTransformIndex];
 
   const applyChain = useCallback(() => {
-    if (!effect) return;
-    const { result } = applyTransformChain(
+    if (!effect || effectIndex < 0) return;
+    const remaster = computeRemasteredWaveform(
       effect.waveform.samples,
-      effect.chain
+      effect.waveform.sampleRate,
+      effect.chain,
+      effect.regions
     );
-    dispatch({ type: "SET_REMASTERED", data: result });
-  }, [effect, dispatch]);
+    dispatch({
+      type: "SET_REMASTERED",
+      index: effectIndex,
+      data: remaster.result,
+      remasterInfo: {
+        clippedSamples: remaster.clippedSamples,
+        originalStats: remaster.originalStats,
+        remasteredStats: remaster.remasteredStats,
+        updatedAt: Date.now(),
+      },
+    });
+  }, [dispatch, effect, effectIndex]);
 
   useEffect(() => {
-    if (effect && effect.chain.length > 0) {
+    if (effect && effectIndex >= 0) {
       const timer = setTimeout(applyChain, 100);
       return () => clearTimeout(timer);
     }
-  }, [effect?.chain, applyChain]);
+  }, [effect, effectIndex, applyChain]);
 
   if (!effect) {
     return (
@@ -333,13 +361,14 @@ export function TransformPanel() {
         </p>
         <Button variant="outline" size="xs" onClick={applyChain}>
           <Play data-icon="inline-start" />
-          Apply Chain
+          Preview
         </Button>
       </div>
     );
   }
 
   const Controls = CONTROLS[step.type];
+  const clippedSamples = effect.remasterInfo?.clippedSamples ?? 0;
 
   return (
     <div className="flex h-full flex-col gap-2 px-3 py-2">
@@ -353,10 +382,27 @@ export function TransformPanel() {
         >
           {step.enabled ? "ON" : "OFF"}
         </Badge>
+        <Badge
+          variant={clippedSamples > 0 ? "default" : "outline"}
+          className="text-[10px]"
+        >
+          Clip {clippedSamples}
+        </Badge>
         <div className="ml-auto">
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => dispatch({ type: "RESET_TRANSFORMS" })}
+            disabled={effect.chain.length === 0}
+          >
+            <RotateCcw data-icon="inline-start" />
+            Reset All
+          </Button>
+        </div>
+        <div>
           <Button variant="outline" size="xs" onClick={applyChain}>
             <Play data-icon="inline-start" />
-            Apply
+            Preview
           </Button>
         </div>
       </div>

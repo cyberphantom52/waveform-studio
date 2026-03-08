@@ -217,8 +217,8 @@ export interface TransformParams {
   gain: { value: number };
   pitch: { semitones: number };
   envelope: { points: EnvelopePoint[] };
-  attack: { samples: number };
-  decay: { samples: number };
+  attack: { durationMs: number };
+  decay: { durationMs: number };
   tailTrim: { threshold: number };
   smoothing: { windowSize: number };
   deadzone: { threshold: number };
@@ -232,7 +232,8 @@ export interface TransformStep {
 
 export function applyTransformChain(
   input: Uint8Array,
-  chain: TransformStep[]
+  chain: TransformStep[],
+  sampleRate: number = 8000
 ): { result: Uint8Array; clippedTotal: number } {
   let samples = toFloat(input);
   let clippedTotal = 0;
@@ -260,12 +261,18 @@ export function applyTransformChain(
       }
       case "attack": {
         const p = step.params as TransformParams["attack"];
-        samples = applyAttack(samples, p.samples);
+        samples = applyAttack(
+          samples,
+          Math.round((p.durationMs / 1000) * sampleRate)
+        );
         break;
       }
       case "decay": {
         const p = step.params as TransformParams["decay"];
-        samples = applyDecay(samples, p.samples);
+        samples = applyDecay(
+          samples,
+          Math.round((p.durationMs / 1000) * sampleRate)
+        );
         break;
       }
       case "tailTrim": {
@@ -299,8 +306,8 @@ export function getDefaultParams(type: TransformType): TransformParams[Transform
         { position: 1, amplitude: 1, curve: "linear" },
       ],
     },
-    attack: { samples: 100 },
-    decay: { samples: 100 },
+    attack: { durationMs: 12 },
+    decay: { durationMs: 12 },
     tailTrim: { threshold: 5 },
     smoothing: { windowSize: 3 },
     deadzone: { threshold: 10 },

@@ -3,6 +3,8 @@ export interface WaveformStats {
   duration: number;
   peak: number;
   peakNormalized: number;
+  minSigned: number;
+  maxSigned: number;
   rms: number;
   rmsNormalized: number;
   zeroCrossings: number;
@@ -10,6 +12,9 @@ export interface WaveformStats {
   clippingCount: number;
   meanAmplitude: number;
   crestFactor: number;
+  nonZeroSampleCount: number;
+  firstNonZeroIndex: number;
+  lastNonZeroIndex: number;
 }
 
 export function computeStats(
@@ -23,6 +28,8 @@ export function computeStats(
       duration: 0,
       peak: 0,
       peakNormalized: 0,
+      minSigned: 0,
+      maxSigned: 0,
       rms: 0,
       rmsNormalized: 0,
       zeroCrossings: 0,
@@ -30,6 +37,9 @@ export function computeStats(
       clippingCount: 0,
       meanAmplitude: 0,
       crestFactor: 0,
+      nonZeroSampleCount: 0,
+      firstNonZeroIndex: -1,
+      lastNonZeroIndex: -1,
     };
   }
 
@@ -38,6 +48,11 @@ export function computeStats(
   let peak = 0;
   let zeroCrossings = 0;
   let clipping = 0;
+  let minSigned = Number.POSITIVE_INFINITY;
+  let maxSigned = Number.NEGATIVE_INFINITY;
+  let nonZeroSampleCount = 0;
+  let firstNonZeroIndex = -1;
+  let lastNonZeroIndex = -1;
 
   for (let i = 0; i < n; i++) {
     const centered = samples[i] - 128;
@@ -46,7 +61,14 @@ export function computeStats(
     sumSquares += centered * centered;
     sumAbs += abs;
     if (abs > peak) peak = abs;
+    if (centered < minSigned) minSigned = centered;
+    if (centered > maxSigned) maxSigned = centered;
     if (samples[i] === 0 || samples[i] === 255) clipping++;
+    if (centered !== 0) {
+      nonZeroSampleCount++;
+      if (firstNonZeroIndex === -1) firstNonZeroIndex = i;
+      lastNonZeroIndex = i;
+    }
 
     if (i > 0) {
       const prev = samples[i - 1] - 128;
@@ -67,6 +89,8 @@ export function computeStats(
     duration,
     peak,
     peakNormalized: peak / 128,
+    minSigned,
+    maxSigned,
     rms,
     rmsNormalized: rms / 128,
     zeroCrossings,
@@ -74,6 +98,9 @@ export function computeStats(
     clippingCount: clipping,
     meanAmplitude: sumAbs / n,
     crestFactor,
+    nonZeroSampleCount,
+    firstNonZeroIndex,
+    lastNonZeroIndex,
   };
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStudioDispatch } from "@/lib/studio-context";
+import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import {
   generateWaveform,
   defaultGeneratorParams,
@@ -37,6 +37,7 @@ const SHAPES: WaveShape[] = [
 ];
 
 export function GeneratorPanel() {
+  const state = useStudio();
   const dispatch = useStudioDispatch();
   const [params, setParams] = useState<GeneratorParams>(defaultGeneratorParams);
   const [open, setOpen] = useState(false);
@@ -55,6 +56,11 @@ export function GeneratorPanel() {
         chain: [],
         regions: [],
         remastered: null,
+        familyTag: "generated",
+        playRateHz: state.globalDefaultPlayRateHz,
+        notes: "",
+        selected: false,
+        remasterInfo: null,
       },
     });
     setOpen(false);

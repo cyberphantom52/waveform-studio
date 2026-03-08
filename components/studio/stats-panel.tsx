@@ -5,7 +5,6 @@ import { computeStats } from "@/lib/dsp/stats";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useMemo } from "react";
 
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
@@ -22,21 +21,13 @@ export function StatsPanel() {
   const state = useStudio();
   const effect = state.effects[state.activeEffectIndex];
 
-  const originalStats = useMemo(
-    () =>
-      effect
-        ? computeStats(effect.waveform.samples, effect.waveform.sampleRate)
-        : null,
-    [effect?.waveform.samples, effect?.waveform.sampleRate]
-  );
+  const originalStats =
+    effect?.remasterInfo?.originalStats ??
+    (effect ? computeStats(effect.waveform.samples, effect.waveform.sampleRate) : null);
 
-  const remasteredStats = useMemo(
-    () =>
-      effect?.remastered
-        ? computeStats(effect.remastered, effect.waveform.sampleRate)
-        : null,
-    [effect?.remastered, effect?.waveform.sampleRate]
-  );
+  const remasteredStats =
+    effect?.remasterInfo?.remasteredStats ??
+    (effect?.remastered ? computeStats(effect.remastered, effect.waveform.sampleRate) : null);
 
   if (!effect || !originalStats) {
     return (
@@ -74,6 +65,14 @@ export function StatsPanel() {
             label="Peak Norm"
             value={originalStats.peakNormalized.toFixed(3)}
           />
+          <StatRow
+            label="Min Signed"
+            value={originalStats.minSigned.toString()}
+          />
+          <StatRow
+            label="Max Signed"
+            value={originalStats.maxSigned.toString()}
+          />
           <StatRow label="RMS" value={originalStats.rms.toFixed(2)} />
           <StatRow
             label="RMS Norm"
@@ -90,6 +89,18 @@ export function StatsPanel() {
           <StatRow
             label="Clipping"
             value={originalStats.clippingCount.toString()}
+          />
+          <StatRow
+            label="Non-zero"
+            value={originalStats.nonZeroSampleCount.toString()}
+          />
+          <StatRow
+            label="First NZ"
+            value={originalStats.firstNonZeroIndex.toString()}
+          />
+          <StatRow
+            label="Last NZ"
+            value={originalStats.lastNonZeroIndex.toString()}
           />
           <StatRow
             label="Mean Amp"
@@ -121,6 +132,14 @@ export function StatsPanel() {
               />
               <StatRow label="Peak" value={remasteredStats.peak.toString()} />
               <StatRow
+                label="Min Signed"
+                value={remasteredStats.minSigned.toString()}
+              />
+              <StatRow
+                label="Max Signed"
+                value={remasteredStats.maxSigned.toString()}
+              />
+              <StatRow
                 label="RMS"
                 value={remasteredStats.rms.toFixed(2)}
               />
@@ -134,11 +153,45 @@ export function StatsPanel() {
               />
               <StatRow
                 label="Clipping"
-                value={remasteredStats.clippingCount.toString()}
+                value={(effect.remasterInfo?.clippedSamples ?? remasteredStats.clippingCount).toString()}
+              />
+              <StatRow
+                label="Non-zero"
+                value={remasteredStats.nonZeroSampleCount.toString()}
+              />
+              <StatRow
+                label="First NZ"
+                value={remasteredStats.firstNonZeroIndex.toString()}
+              />
+              <StatRow
+                label="Last NZ"
+                value={remasteredStats.lastNonZeroIndex.toString()}
               />
               <StatRow
                 label="Crest"
                 value={remasteredStats.crestFactor.toFixed(2)}
+              />
+              <Separator className="my-1" />
+              <div className="px-2 py-1">
+                <Badge variant="outline" className="text-[10px]">
+                  Delta
+                </Badge>
+              </div>
+              <StatRow
+                label="Peak Delta"
+                value={(remasteredStats.peak - originalStats.peak).toString()}
+              />
+              <StatRow
+                label="RMS Delta"
+                value={(remasteredStats.rms - originalStats.rms).toFixed(2)}
+              />
+              <StatRow
+                label="Zero X Delta"
+                value={(remasteredStats.zeroCrossings - originalStats.zeroCrossings).toString()}
+              />
+              <StatRow
+                label="Duration Delta"
+                value={`${((remasteredStats.duration - originalStats.duration) * 1000).toFixed(1)}ms`}
               />
             </>
           )}

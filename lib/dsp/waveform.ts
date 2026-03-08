@@ -3,9 +3,6 @@ export interface WaveformData {
   name: string;
   samples: Uint8Array;
   sampleRate: number;
-  familyId?: string;
-  effectId?: string;
-  style?: string;
 }
 
 export interface EffectMetadata {
@@ -13,6 +10,7 @@ export interface EffectMetadata {
   effectId: number;
   family: string;
   style: string;
+  playRateHz?: number;
 }
 
 export function parseBinFile(buffer: ArrayBuffer, name: string): WaveformData {
@@ -38,6 +36,11 @@ export function parseEffectJson(
         effectId: entry.effectId ?? entry.effect_id ?? 0,
         family: entry.family ?? "default",
         style: entry.style ?? "default",
+        playRateHz:
+          entry.playRateHz ??
+          entry.play_rate_hz ??
+          entry.playRate ??
+          entry.play_rate,
       };
     }
   } else if (typeof raw === "object") {
@@ -48,6 +51,10 @@ export function parseEffectJson(
         effectId: (v.effectId ?? v.effect_id ?? 0) as number,
         family: (v.family ?? "default") as string,
         style: (v.style ?? "default") as string,
+        playRateHz: (v.playRateHz ??
+          v.play_rate_hz ??
+          v.playRate ??
+          v.play_rate) as number | undefined,
       };
     }
   }

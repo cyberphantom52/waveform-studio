@@ -1,7 +1,7 @@
 "use client";
 
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
-import { parseBinFile, parseEffectJson } from "@/lib/dsp/waveform";
+import { computeRemasteredWaveform } from "@/lib/dsp/remaster";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -19,8 +19,18 @@ import {
   ZoomOut,
   Maximize2,
   FileAudio,
+  FileJson,
+  Files,
 } from "lucide-react";
 import { useCallback, useRef } from "react";
+import {
+  buildManifest,
+  downloadWaveformBin,
+  exportManifestBlob,
+  exportPresetsBlob,
+  importStudioFiles,
+  promptDownload,
+} from "@/lib/studio-io";
 
 export function Toolbar() {
   const state = useStudio();
@@ -31,76 +41,54 @@ export function Toolbar() {
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files) return;
+      const imported = await importStudioFiles(files, state.globalDefaultPlayRateHz);
 
-      const newEffects = [];
-      let metadataJson: Record<string, unknown> | null = null;
-
-      for (const file of Array.from(files)) {
-        if (file.name.endsWith(".json")) {
-          const text = await file.text();
-          metadataJson = parseEffectJson(text);
-          continue;
-        }
-
-        if (file.name.endsWith(".bin")) {
-          const buffer = await file.arrayBuffer();
-          const waveform = parseBinFile(buffer, file.name);
-          newEffects.push({
-            waveform,
-            chain: [],
-            regions: [],
-            remastered: null,
-          });
-        }
+      if (imported.effects.length > 0) {
+        dispatch({ type: "BATCH_ADD_EFFECTS", effects: imported.effects });
       }
 
-      if (newEffects.length > 0) {
-        dispatch({ type: "BATCH_ADD_EFFECTS", effects: newEffects });
-      }
-
-      if (metadataJson) {
-        dispatch({
-          type: "SET_METADATA",
-          metadata: metadataJson as Parameters<
-            typeof dispatch
-          >[0] extends { type: "SET_METADATA"; metadata: infer M }
-            ? M
-            : never,
-        });
+      if (Object.keys(imported.metadata).length > 0) {
+        dispatch({ type: "SET_METADATA", metadata: imported.metadata });
       }
 
       if (fileRef.current) fileRef.current.value = "";
     },
-    [dispatch]
+    [dispatch, state.globalDefaultPlayRateHz]
   );
 
   const handleExport = useCallback(() => {
     const effect = state.effects[state.activeEffectIndex];
-    if (!effect?.remastered) return;
+    if (!effect) return;
 
-    const blob = new Blob([effect.remastered.buffer as ArrayBuffer], {
-      type: "application/octet-stream",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${effect.waveform.name}_remastered.bin`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const remaster = computeRemasteredWaveform(
+      effect.waveform.samples,
+      effect.waveform.sampleRate,
+      effect.chain,
+      effect.regions
+    );
+    downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, remaster.result);
   }, [state]);
 
   const handleBatchExport = useCallback(() => {
     for (const effect of state.effects) {
-      const data = effect.remastered ?? effect.waveform.samples;
-      const blob = new Blob([data.buffer as ArrayBuffer], { type: "application/octet-stream" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${effect.waveform.name}_remastered.bin`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const remaster = computeRemasteredWaveform(
+        effect.waveform.samples,
+        effect.waveform.sampleRate,
+        effect.chain,
+        effect.regions
+      );
+      downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, remaster.result);
     }
   }, [state.effects]);
+
+  const handleManifestExport = useCallback(async () => {
+    const manifest = await buildManifest(state);
+    promptDownload("waveform-manifest.json", exportManifestBlob(manifest));
+  }, [state]);
+
+  const handlePresetExport = useCallback(() => {
+    promptDownload("family-presets.json", exportPresetsBlob(state.presets));
+  }, [state.presets]);
 
   const activeEffect = state.effects[state.activeEffectIndex];
 
@@ -140,12 +128,12 @@ export function Toolbar() {
             variant="ghost"
             size="icon-xs"
             onClick={handleExport}
-            disabled={!activeEffect?.remastered}
+            disabled={!activeEffect}
           >
             <Download data-icon="inline-start" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Export active</TooltipContent>
+        <TooltipContent>Export active .bin</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -159,7 +147,35 @@ export function Toolbar() {
             <Download data-icon="inline-start" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Batch export all</TooltipContent>
+        <TooltipContent>Batch export all .bin</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleManifestExport}
+            disabled={state.effects.length === 0}
+          >
+            <FileJson data-icon="inline-start" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Export manifest JSON</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handlePresetExport}
+            disabled={state.presets.length === 0}
+          >
+            <Files data-icon="inline-start" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Export presets JSON</TooltipContent>
       </Tooltip>
 
       <Separator orientation="vertical" className="mx-1 h-4" />
@@ -263,6 +279,9 @@ export function Toolbar() {
             </Badge>
             <Badge variant="outline" className="text-[10px]">
               {activeEffect.waveform.samples.length} samples
+            </Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {activeEffect.playRateHz}Hz play
             </Badge>
           </>
         )}
