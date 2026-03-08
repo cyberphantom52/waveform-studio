@@ -22,7 +22,7 @@ export function createEmptyRegionOverrides(): Region["overrides"] {
 
 export function createDefaultRegion(
   sampleCount: number,
-  existingRegions: Region[]
+  existingRegions: Region[],
 ): Region {
   const index = existingRegions.length + 1;
   const start = Math.floor(sampleCount * 0.25);
@@ -44,7 +44,10 @@ export function sanitizeRegion(region: Region, sampleCount: number): Region {
     ...region,
     start,
     end,
-    crossfadeSamples: Math.max(0, Math.min(region.crossfadeSamples, Math.floor((end - start) / 2))),
+    crossfadeSamples: Math.max(
+      0,
+      Math.min(region.crossfadeSamples, Math.floor((end - start) / 2)),
+    ),
   };
 }
 
@@ -52,18 +55,20 @@ export function computeRemasteredWaveform(
   original: Int8Array,
   sampleRate: number,
   chain: TransformStep[],
-  regions: Region[]
+  regions: Region[],
+  cachedOriginalStats?: WaveformStats,
 ): RemasterResult {
-  const originalStats = computeStats(original, sampleRate);
-  const { result: globalResult, clippedTotal: globalClipped } = applyTransformChain(
-    original,
-    chain,
-    sampleRate
-  );
+  const originalStats =
+    cachedOriginalStats ?? computeStats(original, sampleRate);
+  const { result: globalResult, clippedTotal: globalClipped } =
+    applyTransformChain(original, chain, sampleRate);
   const sanitizedRegions = regions.map((region) =>
-    sanitizeRegion(region, globalResult.length)
+    sanitizeRegion(region, globalResult.length),
   );
-  const { result, clippedTotal: regionClipped } = applyRegions(globalResult, sanitizedRegions);
+  const { result, clippedTotal: regionClipped } = applyRegions(
+    globalResult,
+    sanitizedRegions,
+  );
   return {
     result,
     clippedSamples: globalClipped + regionClipped,

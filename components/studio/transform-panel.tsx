@@ -2,7 +2,6 @@
 
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import type { TransformType, TransformParams } from "@/lib/dsp/transforms";
-import { computeRemasteredWaveform } from "@/lib/dsp/remaster";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,8 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Play, RotateCcw, Trash2 } from "lucide-react";
-import { useCallback, useEffect } from "react";
+import { RotateCcw, Trash2 } from "lucide-react";
 
 function GainControls({
   params,
@@ -398,37 +396,8 @@ const CONTROLS: Record<
 export function TransformPanel() {
   const state = useStudio();
   const dispatch = useStudioDispatch();
-  const effectIndex = state.activeEffectIndex;
-  const effect = state.effects[effectIndex];
+  const effect = state.effects[state.activeEffectIndex];
   const step = effect?.chain[state.activeTransformIndex];
-
-  const applyChain = useCallback(() => {
-    if (!effect || effectIndex < 0) return;
-    const remaster = computeRemasteredWaveform(
-      effect.waveform.samples,
-      effect.waveform.sampleRate,
-      effect.chain,
-      effect.regions,
-    );
-    dispatch({
-      type: "SET_REMASTERED",
-      index: effectIndex,
-      data: remaster.result,
-      remasterInfo: {
-        clippedSamples: remaster.clippedSamples,
-        originalStats: remaster.originalStats,
-        remasteredStats: remaster.remasteredStats,
-        updatedAt: Date.now(),
-      },
-    });
-  }, [dispatch, effect, effectIndex]);
-
-  useEffect(() => {
-    if (effect && effectIndex >= 0) {
-      const timer = setTimeout(applyChain, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [effect, effectIndex, applyChain]);
 
   if (!effect) {
     return (
@@ -444,10 +413,6 @@ export function TransformPanel() {
         <p className="text-xs text-muted-foreground">
           Select a transform from the chain
         </p>
-        <Button variant="outline" size="xs" onClick={applyChain}>
-          <Play data-icon="inline-start" />
-          Preview
-        </Button>
       </div>
     );
   }
@@ -482,12 +447,6 @@ export function TransformPanel() {
           >
             <RotateCcw data-icon="inline-start" />
             Reset All
-          </Button>
-        </div>
-        <div>
-          <Button variant="outline" size="xs" onClick={applyChain}>
-            <Play data-icon="inline-start" />
-            Preview
           </Button>
         </div>
       </div>

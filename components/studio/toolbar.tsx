@@ -1,7 +1,6 @@
 "use client";
 
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
-import { computeRemasteredWaveform } from "@/lib/dsp/remaster";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +40,10 @@ export function Toolbar() {
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files) return;
-      const imported = await importStudioFiles(files, state.globalDefaultPlayRateHz);
+      const imported = await importStudioFiles(
+        files,
+        state.globalDefaultPlayRateHz,
+      );
 
       if (imported.effects.length > 0) {
         dispatch({ type: "BATCH_ADD_EFFECTS", effects: imported.effects });
@@ -53,31 +55,21 @@ export function Toolbar() {
 
       if (fileRef.current) fileRef.current.value = "";
     },
-    [dispatch, state.globalDefaultPlayRateHz]
+    [dispatch, state.globalDefaultPlayRateHz],
   );
 
   const handleExport = useCallback(() => {
     const effect = state.effects[state.activeEffectIndex];
     if (!effect) return;
 
-    const remaster = computeRemasteredWaveform(
-      effect.waveform.samples,
-      effect.waveform.sampleRate,
-      effect.chain,
-      effect.regions
-    );
-    downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, remaster.result);
+    const data = effect.remastered ?? effect.waveform.samples;
+    downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, data);
   }, [state]);
 
   const handleBatchExport = useCallback(() => {
     for (const effect of state.effects) {
-      const remaster = computeRemasteredWaveform(
-        effect.waveform.samples,
-        effect.waveform.sampleRate,
-        effect.chain,
-        effect.regions
-      );
-      downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, remaster.result);
+      const data = effect.remastered ?? effect.waveform.samples;
+      downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, data);
     }
   }, [state.effects]);
 
@@ -261,9 +253,7 @@ export function Toolbar() {
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() =>
-              dispatch({ type: "SET_ZOOM", start: 0, end: 1 })
-            }
+            onClick={() => dispatch({ type: "SET_ZOOM", start: 0, end: 1 })}
           >
             <Maximize2 data-icon="inline-start" />
           </Button>

@@ -12,6 +12,7 @@ import type { TransformStep, TransformType } from "./dsp/transforms";
 import { getDefaultParams } from "./dsp/transforms";
 import type { Region } from "./dsp/region";
 import type { WaveformStats } from "./dsp/stats";
+import { computeRemasteredWaveform } from "./dsp/remaster";
 
 export interface EffectRemasterInfo {
   clippedSamples: number;
@@ -127,11 +128,17 @@ function cloneRegion(region: Region): Region {
     ...region,
     overrides: {
       gain: region.overrides.gain ? { ...region.overrides.gain } : null,
-      smoothing: region.overrides.smoothing ? { ...region.overrides.smoothing } : null,
-      deadzone: region.overrides.deadzone ? { ...region.overrides.deadzone } : null,
+      smoothing: region.overrides.smoothing
+        ? { ...region.overrides.smoothing }
+        : null,
+      deadzone: region.overrides.deadzone
+        ? { ...region.overrides.deadzone }
+        : null,
       envelope: region.overrides.envelope
         ? {
-            points: region.overrides.envelope.points.map((point) => ({ ...point })),
+            points: region.overrides.envelope.points.map((point) => ({
+              ...point,
+            })),
           }
         : null,
     },
@@ -199,7 +206,7 @@ function createSnapshot(state: StudioState): StudioSnapshot {
 function fromSnapshot(
   snapshot: StudioSnapshot,
   undoStack: StudioSnapshot[],
-  redoStack: StudioSnapshot[]
+  redoStack: StudioSnapshot[],
 ): StudioState {
   return {
     effects: snapshot.effects.map(cloneEffect),
@@ -214,6 +221,34 @@ function fromSnapshot(
     globalDefaultPlayRateHz: snapshot.globalDefaultPlayRateHz,
     undoStack,
     redoStack,
+  };
+}
+
+/**
+ * Recompute the remastered waveform inline — call this inside the reducer
+ * whenever chain or regions change so the result is part of the same state
+ * update (one render instead of two).
+ */
+function recomputeRemaster(effect: StudioEffect): StudioEffect {
+  if (!effect.waveform.samples.length) return effect;
+
+  const remaster = computeRemasteredWaveform(
+    effect.waveform.samples,
+    effect.waveform.sampleRate,
+    effect.chain,
+    effect.regions,
+    effect.remasterInfo?.originalStats ?? undefined,
+  );
+
+  return {
+    ...effect,
+    remastered: remaster.result,
+    remasterInfo: {
+      clippedSamples: remaster.clippedSamples,
+      originalStats: remaster.originalStats,
+      remasteredStats: remaster.remasteredStats,
+      updatedAt: Date.now(),
+    },
   };
 }
 
@@ -256,19 +291,24 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effects = s.effects.filter((_, i) => i !== action.index);
       const activeEffectIndex = Math.min(
         Math.max(0, effects.length - 1),
-        s.activeEffectIndex >= action.index ? s.activeEffectIndex - 1 : s.activeEffectIndex
+        s.activeEffectIndex >= action.index
+          ? s.activeEffectIndex - 1
+          : s.activeEffectIndex,
       );
       return {
         ...s,
         effects,
         families: buildFamilies(effects),
         activeEffectIndex: effects.length === 0 ? -1 : activeEffectIndex,
-        activeTransformIndex: effects.length === 0 ? -1 : s.activeTransformIndex,
+        activeTransformIndex:
+          effects.length === 0 ? -1 : s.activeTransformIndex,
         selectedRegionId: null,
       };
     }
     case "REMOVE_SELECTED_EFFECTS": {
-      const selectedCount = state.effects.filter((effect) => effect.selected).length;
+      const selectedCount = state.effects.filter(
+        (effect) => effect.selected,
+      ).length;
       if (selectedCount === 0) return state;
       const s = pushUndo(state);
       const effects = s.effects.filter((effect) => !effect.selected);
@@ -276,8 +316,12 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         ...s,
         effects,
         families: buildFamilies(effects),
-        activeEffectIndex: effects.length === 0 ? -1 : Math.min(s.activeEffectIndex, effects.length - 1),
-        activeTransformIndex: effects.length === 0 ? -1 : s.activeTransformIndex,
+        activeEffectIndex:
+          effects.length === 0
+            ? -1
+            : Math.min(s.activeEffectIndex, effects.length - 1),
+        activeTransformIndex:
+          effects.length === 0 ? -1 : s.activeTransformIndex,
         selectedRegionId: null,
       };
     }
@@ -292,17 +336,22 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return { ...state, activeTransformIndex: action.index };
     case "TOGGLE_EFFECT_SELECTION": {
       const effects = state.effects.map((effect, index) =>
-        index === action.index ? { ...effect, selected: !effect.selected } : effect
+        index === action.index
+          ? { ...effect, selected: !effect.selected }
+          : effect,
       );
       return { ...state, effects };
     }
     case "CLEAR_EFFECT_SELECTIONS": {
-      const effects = state.effects.map((effect) => ({ ...effect, selected: false }));
+      const effects = state.effects.map((effect) => ({
+        ...effect,
+        selected: false,
+      }));
       return { ...state, effects };
     }
     case "UPDATE_EFFECT": {
       const effects = state.effects.map((effect, index) =>
-        index === action.index ? { ...effect, ...action.patch } : effect
+        index === action.index ? { ...effect, ...action.patch } : effect,
       );
       return { ...state, effects, families: buildFamilies(effects) };
     }
@@ -315,9 +364,12 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         enabled: true,
         params: getDefaultParams(action.transformType),
       };
-      const updated = { ...effect, chain: [...effect.chain, newStep] };
+      const updated = recomputeRemaster({
+        ...effect,
+        chain: [...effect.chain, newStep],
+      });
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return {
         ...s,
@@ -331,9 +383,9 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effect = s.effects[s.activeEffectIndex];
       if (!effect) return s;
       const chain = effect.chain.filter((_, i) => i !== action.index);
-      const updated = { ...effect, chain };
+      const updated = recomputeRemaster({ ...effect, chain });
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects };
     }
@@ -346,9 +398,9 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         enabled: true,
         params: getDefaultParams(step.type),
       }));
-      const updated = { ...effect, chain };
+      const updated = recomputeRemaster({ ...effect, chain });
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects };
     }
@@ -357,11 +409,11 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effect = s.effects[s.activeEffectIndex];
       if (!effect) return s;
       const chain = effect.chain.map((step, i) =>
-        i === action.index ? { ...step, enabled: !step.enabled } : step
+        i === action.index ? { ...step, enabled: !step.enabled } : step,
       );
-      const updated = { ...effect, chain };
+      const updated = recomputeRemaster({ ...effect, chain });
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects };
     }
@@ -369,11 +421,11 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effect = state.effects[state.activeEffectIndex];
       if (!effect) return state;
       const chain = effect.chain.map((step, i) =>
-        i === action.index ? { ...step, params: action.params } : step
+        i === action.index ? { ...step, params: action.params } : step,
       );
-      const updated = { ...effect, chain };
+      const updated = recomputeRemaster({ ...effect, chain });
       const effects = state.effects.map((e, i) =>
-        i === state.activeEffectIndex ? updated : e
+        i === state.activeEffectIndex ? updated : e,
       );
       return { ...state, effects };
     }
@@ -384,9 +436,9 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const chain = [...effect.chain];
       const [removed] = chain.splice(action.fromIndex, 1);
       chain.splice(action.toIndex, 0, removed);
-      const updated = { ...effect, chain };
+      const updated = recomputeRemaster({ ...effect, chain });
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects };
     }
@@ -399,7 +451,7 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         remasterInfo: action.remasterInfo,
       };
       const effects = state.effects.map((e, i) =>
-        i === action.index ? updated : e
+        i === action.index ? updated : e,
       );
       return { ...state, effects };
     }
@@ -411,9 +463,12 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
       if (!effect) return s;
-      const updated = { ...effect, regions: [...effect.regions, action.region] };
+      const updated = {
+        ...effect,
+        regions: [...effect.regions, action.region],
+      };
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects, selectedRegionId: action.region.id };
     }
@@ -426,12 +481,13 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         regions: effect.regions.filter((r) => r.id !== action.id),
       };
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return {
         ...s,
         effects,
-        selectedRegionId: s.selectedRegionId === action.id ? null : s.selectedRegionId,
+        selectedRegionId:
+          s.selectedRegionId === action.id ? null : s.selectedRegionId,
       };
     }
     case "CLEAR_REGIONS": {
@@ -440,21 +496,21 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       if (!effect) return s;
       const updated = { ...effect, regions: [] };
       const effects = s.effects.map((e, i) =>
-        i === s.activeEffectIndex ? updated : e
+        i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects, selectedRegionId: null };
     }
     case "UPDATE_REGION": {
       const effect = state.effects[state.activeEffectIndex];
       if (!effect) return state;
-      const updated = {
+      const updated = recomputeRemaster({
         ...effect,
         regions: effect.regions.map((r) =>
-          r.id === action.region.id ? action.region : r
+          r.id === action.region.id ? action.region : r,
         ),
-      };
+      });
       const effects = state.effects.map((e, i) =>
-        i === state.activeEffectIndex ? updated : e
+        i === state.activeEffectIndex ? updated : e,
       );
       return { ...state, effects };
     }
@@ -462,13 +518,16 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return { ...state, selectedRegionId: action.id };
     case "SET_METADATA": {
       const effects = state.effects.map((e) => {
-        const meta = action.metadata[e.waveform.name + ".bin"] ?? action.metadata[e.waveform.name];
+        const meta =
+          action.metadata[e.waveform.name + ".bin"] ??
+          action.metadata[e.waveform.name];
         if (meta) {
           return {
             ...e,
             metadata: meta,
             familyTag: meta.family,
-            playRateHz: meta.playRateHz ?? e.playRateHz ?? state.globalDefaultPlayRateHz,
+            playRateHz:
+              meta.playRateHz ?? e.playRateHz ?? state.globalDefaultPlayRateHz,
           };
         }
         return e;
@@ -483,7 +542,10 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     case "SET_GLOBAL_DEFAULT_PLAY_RATE":
       return { ...state, globalDefaultPlayRateHz: action.playRateHz };
     case "SAVE_PRESET": {
-      const presets = [...state.presets.filter((preset) => preset.id !== action.preset.id), clonePreset(action.preset)];
+      const presets = [
+        ...state.presets.filter((preset) => preset.id !== action.preset.id),
+        clonePreset(action.preset),
+      ];
       return { ...state, presets };
     }
     case "DELETE_PRESET":
@@ -497,18 +559,17 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effects = state.effects.map((effect) =>
         effect.familyTag === action.familyTag
           ? { ...effect, chain: preset.chain.map(cloneTransformStep) }
-          : effect
+          : effect,
       );
       return { ...state, effects, activeTransformIndex: 0 };
     }
     case "UNDO": {
       if (state.undoStack.length === 0) return state;
       const prev = state.undoStack[state.undoStack.length - 1];
-      return fromSnapshot(
-        prev,
-        state.undoStack.slice(0, -1),
-        [...state.redoStack, createSnapshot(state)]
-      );
+      return fromSnapshot(prev, state.undoStack.slice(0, -1), [
+        ...state.redoStack,
+        createSnapshot(state),
+      ]);
     }
     case "REDO": {
       if (state.redoStack.length === 0) return state;
@@ -516,7 +577,7 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return fromSnapshot(
         next,
         [...state.undoStack, createSnapshot(state)],
-        state.redoStack.slice(0, -1)
+        state.redoStack.slice(0, -1),
       );
     }
     default:
