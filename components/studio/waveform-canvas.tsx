@@ -228,7 +228,7 @@ export function WaveformCanvas() {
   }, [render]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex items-center gap-2 border-b border-border px-2 py-1">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
           Waveform
@@ -258,7 +258,10 @@ export function WaveformCanvas() {
         </div>
       </div>
 
-      <div ref={containerRef} className="relative flex-1 overflow-hidden">
+      <div
+        ref={containerRef}
+        className="relative flex-1 overflow-hidden min-h-0 min-w-0"
+      >
         <svg
           ref={svgRef}
           className="absolute inset-0 h-full w-full"

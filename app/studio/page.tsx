@@ -19,33 +19,33 @@ import { Separator } from "@/components/ui/separator";
 
 export default function StudioPage() {
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen min-h-0 min-w-0 flex-col overflow-hidden">
       <Toolbar />
 
-      <ResizablePanelGroup orientation="vertical" className="flex-1">
+      <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0 min-w-0">
         {/* Top section: sidebar + canvas + right panel */}
-        <ResizablePanel defaultSize={72} minSize={40}>
-          <ResizablePanelGroup orientation="horizontal">
+        <ResizablePanel defaultSize="75%" minSize="35%">
+          <ResizablePanelGroup orientation="horizontal" className="min-h-0 min-w-0">
             {/* Left sidebar */}
-            <ResizablePanel defaultSize={18} minSize={12} maxSize={30}>
-              <div className="flex h-full flex-col border-r border-border">
-                <Tabs defaultValue="chain" className="flex h-full flex-col">
-                  <TabsList className="h-7 w-full justify-start gap-0 border-b border-border bg-transparent px-1">
+            <ResizablePanel defaultSize="20%" minSize="15%" maxSize="35%">
+              <div className="flex h-full min-h-0 min-w-0 flex-col border-r border-border bg-card">
+                <Tabs defaultValue="chain" className="flex h-full min-h-0 min-w-0 flex-col">
+                  <TabsList className="h-8 w-full shrink-0 justify-start gap-0 border-b border-border bg-transparent px-1">
                     <TabsTrigger
                       value="chain"
-                      className="h-5 px-2 text-[10px] data-[state=active]:bg-muted"
+                      className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
                     >
                       Chain
                     </TabsTrigger>
                     <TabsTrigger
                       value="browser"
-                      className="h-5 px-2 text-[10px] data-[state=active]:bg-muted"
+                      className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
                     >
                       Browse
                     </TabsTrigger>
                     <TabsTrigger
                       value="regions"
-                      className="h-5 px-2 text-[10px] data-[state=active]:bg-muted"
+                      className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
                     >
                       Regions
                     </TabsTrigger>
@@ -61,35 +61,35 @@ export default function StudioPage() {
                   </TabsContent>
                 </Tabs>
                 <Separator />
-                <div className="flex items-center px-2 py-1">
+                <div className="flex shrink-0 items-center px-2 py-1.5">
                   <GeneratorPanel />
                 </div>
               </div>
             </ResizablePanel>
 
-            <ResizableHandle />
+            <ResizableHandle withHandle />
 
             {/* Center: waveform canvas */}
-            <ResizablePanel defaultSize={62} minSize={30}>
+            <ResizablePanel defaultSize="58%" minSize="25%">
               <WaveformCanvas />
             </ResizablePanel>
 
-            <ResizableHandle />
+            <ResizableHandle withHandle />
 
             {/* Right sidebar */}
-            <ResizablePanel defaultSize={20} minSize={14} maxSize={30}>
-              <div className="flex h-full flex-col border-l border-border">
-                <Tabs defaultValue="stats" className="flex h-full flex-col">
-                  <TabsList className="h-7 w-full justify-start gap-0 border-b border-border bg-transparent px-1">
+            <ResizablePanel defaultSize="22%" minSize="15%" maxSize="35%">
+              <div className="flex h-full min-h-0 min-w-0 flex-col border-l border-border bg-card">
+                <Tabs defaultValue="stats" className="flex h-full min-h-0 min-w-0 flex-col">
+                  <TabsList className="h-8 w-full shrink-0 justify-start gap-0 border-b border-border bg-transparent px-1">
                     <TabsTrigger
                       value="stats"
-                      className="h-5 px-2 text-[10px] data-[state=active]:bg-muted"
+                      className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
                     >
                       Stats
                     </TabsTrigger>
                     <TabsTrigger
                       value="props"
-                      className="h-5 px-2 text-[10px] data-[state=active]:bg-muted"
+                      className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
                     >
                       Props
                     </TabsTrigger>
@@ -106,11 +106,11 @@ export default function StudioPage() {
           </ResizablePanelGroup>
         </ResizablePanel>
 
-        <ResizableHandle />
+        <ResizableHandle withHandle />
 
         {/* Bottom: transform parameters */}
-        <ResizablePanel defaultSize={28} minSize={15} maxSize={45}>
-          <div className="h-full border-t border-border">
+        <ResizablePanel defaultSize="25%" minSize="10%" maxSize="50%">
+          <div className="h-full min-h-0 min-w-0 border-t border-border bg-card">
             <TransformPanel />
           </div>
         </ResizablePanel>

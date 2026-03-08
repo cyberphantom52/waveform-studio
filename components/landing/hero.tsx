@@ -136,26 +136,22 @@ export function Hero() {
           <div className="h-px w-12 bg-[var(--waveform-remastered)]" />
         </div>
 
-        {/* Title with staggered animation */}
-        <h1 className="flex flex-col gap-0 leading-none">
-          {"WAVEFORM".split("").map((char, i) => (
-            <span
-              key={`w-${i}`}
-              className="inline-block animate-in fade-in slide-in-from-bottom-4 fill-mode-both text-[clamp(3rem,10vw,7rem)] font-bold tracking-[-0.04em] text-white"
-              style={{ animationDelay: `${i * 60}ms`, animationDuration: "600ms" }}
-            >
-              {i === 0 ? char : ""}
-            </span>
-          ))}
-          <span
-            className="animate-in fade-in slide-in-from-bottom-4 fill-mode-both text-[clamp(3rem,10vw,7rem)] font-bold tracking-[-0.04em] text-white"
-            style={{ animationDelay: "0ms", animationDuration: "600ms" }}
-          >
-            WAVEFORM
+        {/* Title with staggered character animation */}
+        <h1 className="flex flex-col items-center gap-2 leading-none">
+          <span className="flex">
+            {"WAVEFORM".split("").map((char, i) => (
+              <span
+                key={`w-${i}`}
+                className="inline-block animate-in fade-in slide-in-from-bottom-4 fill-mode-both text-[clamp(3rem,10vw,7rem)] font-bold tracking-[-0.02em] text-white"
+                style={{ animationDelay: `${i * 60}ms`, animationDuration: "600ms" }}
+              >
+                {char}
+              </span>
+            ))}
           </span>
           <span
             className="animate-in fade-in slide-in-from-bottom-4 fill-mode-both text-[clamp(1.5rem,4vw,3rem)] font-light tracking-[0.2em] text-[var(--waveform-remastered)]"
-            style={{ animationDelay: "400ms", animationDuration: "600ms" }}
+            style={{ animationDelay: "500ms", animationDuration: "600ms" }}
           >
             STUDIO
           </span>
