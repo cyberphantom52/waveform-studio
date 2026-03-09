@@ -2,7 +2,7 @@
  * Pure-math FFT/DFT library for frequency analysis of haptic waveforms.
  *
  * Designed for signed 8-bit samples (-128..127) stored as Int8Array,
- * with typical sample rates of 8000 Hz and lengths of 100–8000 samples.
+ * with typical sample rates of 24000 Hz and lengths of 100–8000 samples.
  *
  * No external dependencies — all computations use Float64Array internally.
  */
@@ -342,7 +342,7 @@ export interface SpectrumResult {
  * 6. Compute frequency axis and dB scale.
  *
  * @param samples - Input signal (Int8Array or Float64Array).
- * @param sampleRate - Sample rate in Hz (typically 8000 for haptic waveforms).
+ * @param sampleRate - Sample rate in Hz (typically 24000 for haptic waveforms).
  * @param windowType - Window function to apply (default: "hann").
  * @returns The full spectrum result.
  */

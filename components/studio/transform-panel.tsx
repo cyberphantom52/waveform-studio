@@ -299,6 +299,202 @@ function EnvelopeControls({
   );
 }
 
+function NormalizeControls({
+  params,
+  onChange,
+}: {
+  params: TransformParams["normalize"];
+  onChange: (p: TransformParams["normalize"]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-4">
+        <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Mode
+        </label>
+        <Select
+          value={params.mode}
+          onValueChange={(v) =>
+            onChange({ ...params, mode: v as "peak" | "rms" })
+          }
+        >
+          <SelectTrigger className="h-7 w-24 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="peak">Peak</SelectItem>
+              <SelectItem value="rms">RMS</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center gap-4">
+        <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Target
+        </label>
+        <Slider
+          min={1}
+          max={127}
+          step={1}
+          value={[params.targetLevel]}
+          onValueChange={([v]) => onChange({ ...params, targetLevel: v })}
+          className="flex-1"
+        />
+        <span className="w-12 text-right text-xs tabular-nums">
+          {params.targetLevel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DcOffsetControls({
+  params,
+  onChange,
+}: {
+  params: TransformParams["dcOffset"];
+  onChange: (p: TransformParams["dcOffset"]) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+        Mode
+      </label>
+      <Select
+        value={params.mode}
+        onValueChange={(v) => onChange({ mode: v as "mean" | "median" })}
+      >
+        <SelectTrigger className="h-7 w-24 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value="mean">Mean</SelectItem>
+            <SelectItem value="median">Median</SelectItem>
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function InvertControls(_props: {
+  params: TransformParams["invert"];
+  onChange: (p: TransformParams["invert"]) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center py-2">
+      <p className="text-xs text-muted-foreground">
+        Flips polarity — no parameters. Toggle via enable/disable.
+      </p>
+    </div>
+  );
+}
+
+function ClampControls({
+  params,
+  onChange,
+}: {
+  params: TransformParams["clamp"];
+  onChange: (p: TransformParams["clamp"]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-4">
+        <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Min
+        </label>
+        <Slider
+          min={-128}
+          max={0}
+          step={1}
+          value={[params.min]}
+          onValueChange={([v]) => onChange({ ...params, min: v })}
+          className="flex-1"
+        />
+        <span className="w-12 text-right text-xs tabular-nums">
+          {params.min}
+        </span>
+      </div>
+      <div className="flex items-center gap-4">
+        <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Max
+        </label>
+        <Slider
+          min={0}
+          max={127}
+          step={1}
+          value={[params.max]}
+          onValueChange={([v]) => onChange({ ...params, max: v })}
+          className="flex-1"
+        />
+        <span className="w-12 text-right text-xs tabular-nums">
+          {params.max}
+        </span>
+      </div>
+      <div className="flex items-center gap-4">
+        <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Soft Knee
+        </label>
+        <Slider
+          min={0}
+          max={32}
+          step={1}
+          value={[params.softKnee]}
+          onValueChange={([v]) => onChange({ ...params, softKnee: v })}
+          className="flex-1"
+        />
+        <span className="w-12 text-right text-xs tabular-nums">
+          {params.softKnee}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function ReverseControls(_props: {
+  params: TransformParams["reverse"];
+  onChange: (p: TransformParams["reverse"]) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center py-2">
+      <p className="text-xs text-muted-foreground">
+        Reverses sample order — no parameters. Toggle via enable/disable.
+      </p>
+    </div>
+  );
+}
+
+function QuantizeControls({
+  params,
+  onChange,
+}: {
+  params: TransformParams["quantize"];
+  onChange: (p: TransformParams["quantize"]) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <label className="w-16 text-[10px] uppercase tracking-wider text-muted-foreground">
+        Bits
+      </label>
+      <Slider
+        min={1}
+        max={8}
+        step={1}
+        value={[params.bits]}
+        onValueChange={([v]) => onChange({ bits: v })}
+        className="flex-1"
+      />
+      <span className="w-12 text-right text-xs tabular-nums">
+        {params.bits}
+      </span>
+    </div>
+  );
+}
+
 function SpectralFilterControls({
   params,
   onChange,
@@ -317,7 +513,7 @@ function SpectralFilterControls({
               <label className="text-xs w-12">Hz</label>
               <Slider
                 min={0}
-                max={8000}
+                max={12000}
                 step={10}
                 value={[pt.frequency]}
                 onValueChange={([v]) => {
@@ -368,7 +564,7 @@ function SpectralFilterControls({
         size="sm"
         onClick={() => {
           const maxFreq = pts.length > 0 ? pts[pts.length - 1].frequency : 4000;
-          const newFreq = Math.min(maxFreq + 500, 8000);
+          const newFreq = Math.min(maxFreq + 500, 12000);
           onChange({ points: [...pts, { frequency: newFreq, gain: 1.0 }] });
         }}
       >
@@ -391,6 +587,12 @@ const CONTROLS: Record<
   smoothing: SmoothingControls as never,
   deadzone: DeadzoneControls as never,
   spectralFilter: SpectralFilterControls as never,
+  normalize: NormalizeControls as never,
+  dcOffset: DcOffsetControls as never,
+  invert: InvertControls as never,
+  clamp: ClampControls as never,
+  reverse: ReverseControls as never,
+  quantize: QuantizeControls as never,
 };
 
 export function TransformPanel() {

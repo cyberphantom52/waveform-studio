@@ -205,6 +205,125 @@ export function applyDeadzone(
   return out;
 }
 
+export function applyNormalize(
+  samples: Float64Array,
+  mode: "peak" | "rms",
+  targetLevel: number,
+): Float64Array {
+  const out = new Float64Array(samples.length);
+  if (samples.length === 0) return out;
+
+  if (mode === "peak") {
+    let maxAbs = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const abs = Math.abs(samples[i]);
+      if (abs > maxAbs) maxAbs = abs;
+    }
+    if (maxAbs === 0) return new Float64Array(samples);
+    const scale = targetLevel / maxAbs;
+    for (let i = 0; i < samples.length; i++) out[i] = samples[i] * scale;
+  } else {
+    // RMS mode
+    let sumSq = 0;
+    for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
+    const rms = Math.sqrt(sumSq / samples.length);
+    if (rms === 0) return new Float64Array(samples);
+    const scale = targetLevel / rms;
+    for (let i = 0; i < samples.length; i++) out[i] = samples[i] * scale;
+  }
+  return out;
+}
+
+export function applyDcOffset(
+  samples: Float64Array,
+  mode: "mean" | "median",
+): Float64Array {
+  const out = new Float64Array(samples.length);
+  if (samples.length === 0) return out;
+
+  let offset: number;
+  if (mode === "mean") {
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) sum += samples[i];
+    offset = sum / samples.length;
+  } else {
+    const sorted = Array.from(samples).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    offset =
+      sorted.length % 2 !== 0
+        ? sorted[mid]
+        : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  for (let i = 0; i < samples.length; i++) out[i] = samples[i] - offset;
+  return out;
+}
+
+export function applyInvert(samples: Float64Array): Float64Array {
+  const out = new Float64Array(samples.length);
+  for (let i = 0; i < samples.length; i++) out[i] = -samples[i];
+  return out;
+}
+
+export function applyClamp(
+  samples: Float64Array,
+  min: number,
+  max: number,
+  softKnee: number,
+): Float64Array {
+  const out = new Float64Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    let s = samples[i];
+    if (softKnee > 0) {
+      // Soft knee: smooth transition near the clamp boundaries
+      // Upper boundary
+      if (s > max - softKnee && s < max + softKnee) {
+        const x = s - (max - softKnee);
+        const knee = 2 * softKnee;
+        s = max - softKnee + x - (x * x) / (2 * knee);
+      } else if (s >= max + softKnee) {
+        s = max;
+      }
+      // Lower boundary
+      if (s < min + softKnee && s > min - softKnee) {
+        const x = s - (min + softKnee);
+        const knee = 2 * softKnee;
+        s = min + softKnee + x + (x * x) / (2 * knee);
+      } else if (s <= min - softKnee) {
+        s = min;
+      }
+    } else {
+      s = Math.max(min, Math.min(max, s));
+    }
+    out[i] = s;
+  }
+  return out;
+}
+
+export function applyReverse(samples: Float64Array): Float64Array {
+  const out = new Float64Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    out[i] = samples[samples.length - 1 - i];
+  }
+  return out;
+}
+
+export function applyQuantize(
+  samples: Float64Array,
+  bits: number,
+): Float64Array {
+  const out = new Float64Array(samples.length);
+  const levels = Math.pow(2, bits);
+  const step = 256 / levels;
+  for (let i = 0; i < samples.length; i++) {
+    // Shift from [-128, 127] to [0, 255], quantize, shift back
+    const shifted = samples[i] + 128;
+    const quantized = Math.round(shifted / step) * step;
+    out[i] = quantized - 128;
+  }
+  return out;
+}
+
 export type TransformType =
   | "gain"
   | "pitch"
@@ -214,7 +333,13 @@ export type TransformType =
   | "tailTrim"
   | "smoothing"
   | "deadzone"
-  | "spectralFilter";
+  | "spectralFilter"
+  | "normalize"
+  | "dcOffset"
+  | "invert"
+  | "clamp"
+  | "reverse"
+  | "quantize";
 
 export interface SpectralFilterPoint {
   /** Frequency in Hz */
@@ -233,6 +358,12 @@ export interface TransformParams {
   smoothing: { windowSize: number };
   deadzone: { threshold: number };
   spectralFilter: { points: SpectralFilterPoint[] };
+  normalize: { mode: "peak" | "rms"; targetLevel: number };
+  dcOffset: { mode: "mean" | "median" };
+  invert: Record<string, never>;
+  clamp: { min: number; max: number; softKnee: number };
+  reverse: Record<string, never>;
+  quantize: { bits: number };
 }
 
 export interface TransformStep {
@@ -273,7 +404,7 @@ function interpolateFilterGain(
 export function applyTransformChain(
   input: Int8Array,
   chain: TransformStep[],
-  sampleRate: number = 8000,
+  sampleRate: number = 24000,
 ): { result: Int8Array; clippedTotal: number } {
   let samples = toFloat(input);
   let clippedTotal = 0;
@@ -344,6 +475,34 @@ export function applyTransformChain(
         samples = applySpectralFilter(samples, sampleRate, gains);
         break;
       }
+      case "normalize": {
+        const p = step.params as TransformParams["normalize"];
+        samples = applyNormalize(samples, p.mode, p.targetLevel);
+        break;
+      }
+      case "dcOffset": {
+        const p = step.params as TransformParams["dcOffset"];
+        samples = applyDcOffset(samples, p.mode);
+        break;
+      }
+      case "invert": {
+        samples = applyInvert(samples);
+        break;
+      }
+      case "clamp": {
+        const p = step.params as TransformParams["clamp"];
+        samples = applyClamp(samples, p.min, p.max, p.softKnee);
+        break;
+      }
+      case "reverse": {
+        samples = applyReverse(samples);
+        break;
+      }
+      case "quantize": {
+        const p = step.params as TransformParams["quantize"];
+        samples = applyQuantize(samples, p.bits);
+        break;
+      }
     }
   }
 
@@ -370,9 +529,15 @@ export function getDefaultParams(
     spectralFilter: {
       points: [
         { frequency: 0, gain: 1.0 },
-        { frequency: 4000, gain: 1.0 },
+        { frequency: 12000, gain: 1.0 },
       ],
     },
+    normalize: { mode: "peak", targetLevel: 91 },
+    dcOffset: { mode: "mean" },
+    invert: {},
+    clamp: { min: -91, max: 91, softKnee: 0 },
+    reverse: {},
+    quantize: { bits: 8 },
   };
   return defaults[type];
 }

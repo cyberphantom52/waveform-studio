@@ -86,6 +86,7 @@ type Action =
   | { type: "REMOVE_TRANSFORM"; index: number }
   | { type: "TOGGLE_TRANSFORM"; index: number }
   | { type: "RESET_TRANSFORMS" }
+  | { type: "SET_CHAIN"; chain: TransformStep[] }
   | {
       type: "UPDATE_TRANSFORM_PARAMS";
       index: number;
@@ -404,6 +405,24 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       );
       return { ...s, effects };
     }
+    case "SET_CHAIN": {
+      const s = pushUndo(state);
+      const effect = s.effects[s.activeEffectIndex];
+      if (!effect) return s;
+      const updated = recomputeRemaster({
+        ...effect,
+        chain: action.chain.map(cloneTransformStep),
+      });
+      const effects = s.effects.map((e, i) =>
+        i === s.activeEffectIndex ? updated : e,
+      );
+      return {
+        ...s,
+        effects,
+        families: buildFamilies(effects),
+        activeTransformIndex: updated.chain.length > 0 ? 0 : -1,
+      };
+    }
     case "TOGGLE_TRANSFORM": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
@@ -598,7 +617,7 @@ const initialState: StudioState = {
     height: 320,
     density: 1,
   },
-  globalDefaultPlayRateHz: 8000,
+  globalDefaultPlayRateHz: 24000,
   undoStack: [],
   redoStack: [],
 };

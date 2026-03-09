@@ -33,12 +33,12 @@ export function generateWaveform(params: GeneratorParams): Int8Array {
           Math.sin(2 * Math.PI * frequency * t + phaseOffset) >= 0 ? 1 : -1;
         break;
       case "triangle": {
-        const p = ((frequency * t + phase) % 1 + 1) % 1;
+        const p = (((frequency * t + phase) % 1) + 1) % 1;
         value = p < 0.5 ? 4 * p - 1 : 3 - 4 * p;
         break;
       }
       case "sawtooth": {
-        const p = ((frequency * t + phase) % 1 + 1) % 1;
+        const p = (((frequency * t + phase) % 1) + 1) % 1;
         value = 2 * p - 1;
         break;
       }
@@ -61,6 +61,6 @@ export const defaultGeneratorParams: GeneratorParams = {
   frequency: 150,
   amplitude: 0.8,
   duration: 800,
-  sampleRate: 8000,
+  sampleRate: 24000,
   phase: 0,
 };

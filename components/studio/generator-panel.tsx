@@ -148,12 +148,10 @@ export function GeneratorPanel() {
             </label>
             <Slider
               min={10}
-              max={8000}
+              max={24000}
               step={10}
               value={[params.duration]}
-              onValueChange={([v]) =>
-                setParams((p) => ({ ...p, duration: v }))
-              }
+              onValueChange={([v]) => setParams((p) => ({ ...p, duration: v }))}
               className="flex-1"
             />
             <span className="w-16 text-right text-xs tabular-nums">
@@ -170,9 +168,7 @@ export function GeneratorPanel() {
               max={1}
               step={0.01}
               value={[params.phase]}
-              onValueChange={([v]) =>
-                setParams((p) => ({ ...p, phase: v }))
-              }
+              onValueChange={([v]) => setParams((p) => ({ ...p, phase: v }))}
               className="flex-1"
             />
             <span className="w-12 text-right text-xs tabular-nums">

@@ -27,6 +27,12 @@ import {
   Waves,
   CircleDot,
   Filter,
+  Maximize2,
+  MinusCircle,
+  RefreshCw,
+  Minus,
+  ArrowRightLeft,
+  Grid3x3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +46,12 @@ const TRANSFORM_ICONS: Record<TransformType, React.ElementType> = {
   smoothing: Waves,
   deadzone: CircleDot,
   spectralFilter: Filter,
+  normalize: Maximize2,
+  dcOffset: MinusCircle,
+  invert: RefreshCw,
+  clamp: Minus,
+  reverse: ArrowRightLeft,
+  quantize: Grid3x3,
 };
 
 const TRANSFORM_LABELS: Record<TransformType, string> = {
@@ -52,6 +64,12 @@ const TRANSFORM_LABELS: Record<TransformType, string> = {
   smoothing: "Smoothing",
   deadzone: "Deadzone",
   spectralFilter: "Spectral Filter",
+  normalize: "Normalize",
+  dcOffset: "DC Offset Remove",
+  invert: "Invert",
+  clamp: "Clamp",
+  reverse: "Reverse",
+  quantize: "Quantize",
 };
 
 const ALL_TRANSFORMS: TransformType[] = [
@@ -64,6 +82,12 @@ const ALL_TRANSFORMS: TransformType[] = [
   "smoothing",
   "deadzone",
   "spectralFilter",
+  "normalize",
+  "dcOffset",
+  "invert",
+  "clamp",
+  "reverse",
+  "quantize",
 ];
 
 export function EffectChain() {

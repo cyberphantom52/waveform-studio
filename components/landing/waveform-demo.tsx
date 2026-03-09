@@ -3,7 +3,12 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import * as d3 from "d3";
 import { generateWaveform } from "@/lib/dsp/generator";
-import { toFloat, applyGain, applySmoothing, toInt8 } from "@/lib/dsp/transforms";
+import {
+  toFloat,
+  applyGain,
+  applySmoothing,
+  toInt8,
+} from "@/lib/dsp/transforms";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 
@@ -31,7 +36,7 @@ export function WaveformDemo() {
       frequency,
       amplitude: 0.6,
       duration: 400,
-      sampleRate: 8000,
+      sampleRate: 24000,
       phase: 0,
     });
 
@@ -48,7 +53,10 @@ export function WaveformDemo() {
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    const x = d3.scaleLinear().domain([0, original.length - 1]).range([0, innerW]);
+    const x = d3
+      .scaleLinear()
+      .domain([0, original.length - 1])
+      .range([0, innerW]);
     const y = d3.scaleLinear().domain([-128, 127]).range([innerH, 0]);
 
     // Center line
@@ -124,7 +132,10 @@ export function WaveformDemo() {
               <span className="text-[10px] uppercase tracking-wider text-neutral-500">
                 Gain
               </span>
-              <Badge variant="outline" className="text-[10px] tabular-nums text-neutral-400">
+              <Badge
+                variant="outline"
+                className="text-[10px] tabular-nums text-neutral-400"
+              >
                 {gain.toFixed(2)}x
               </Badge>
             </div>
@@ -142,7 +153,10 @@ export function WaveformDemo() {
               <span className="text-[10px] uppercase tracking-wider text-neutral-500">
                 Smoothing
               </span>
-              <Badge variant="outline" className="text-[10px] tabular-nums text-neutral-400">
+              <Badge
+                variant="outline"
+                className="text-[10px] tabular-nums text-neutral-400"
+              >
                 {smoothing}
               </Badge>
             </div>
@@ -160,7 +174,10 @@ export function WaveformDemo() {
               <span className="text-[10px] uppercase tracking-wider text-neutral-500">
                 Frequency
               </span>
-              <Badge variant="outline" className="text-[10px] tabular-nums text-neutral-400">
+              <Badge
+                variant="outline"
+                className="text-[10px] tabular-nums text-neutral-400"
+              >
                 {frequency}Hz
               </Badge>
             </div>

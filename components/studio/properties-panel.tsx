@@ -18,7 +18,7 @@ export function PropertiesPanel() {
   const familyPresets = useMemo(
     () =>
       state.presets.filter((preset) => preset.familyTag === currentFamilyTag),
-    [currentFamilyTag, state.presets]
+    [currentFamilyTag, state.presets],
   );
 
   if (!effect) {
@@ -79,7 +79,9 @@ export function PropertiesPanel() {
                   type: "UPDATE_EFFECT",
                   index: state.activeEffectIndex,
                   patch: {
-                    playRateHz: Number(event.target.value) || state.globalDefaultPlayRateHz,
+                    playRateHz:
+                      Number(event.target.value) ||
+                      state.globalDefaultPlayRateHz,
                   },
                 })
               }
@@ -98,7 +100,7 @@ export function PropertiesPanel() {
               onChange={(event) =>
                 dispatch({
                   type: "SET_GLOBAL_DEFAULT_PLAY_RATE",
-                  playRateHz: Number(event.target.value) || 8000,
+                  playRateHz: Number(event.target.value) || 24000,
                 })
               }
             />
@@ -115,7 +117,9 @@ export function PropertiesPanel() {
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Length
             </span>
-            <span className="text-xs">{effect.waveform.samples.length} bytes</span>
+            <span className="text-xs">
+              {effect.waveform.samples.length} bytes
+            </span>
           </div>
 
           {meta && (
@@ -203,7 +207,9 @@ export function PropertiesPanel() {
 
           <div className="flex flex-col gap-2 px-2">
             {familyPresets.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No presets saved for this family.</p>
+              <p className="text-xs text-muted-foreground">
+                No presets saved for this family.
+              </p>
             ) : (
               familyPresets.map((preset) => (
                 <div
@@ -280,7 +286,10 @@ export function PropertiesPanel() {
                 </span>
               </div>
               {effect.regions.map((r) => (
-                <div key={r.id} className="flex items-center justify-between px-2">
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between px-2"
+                >
                   <span className="text-xs tabular-nums">
                     {r.name} [{r.start}-{r.end}]
                   </span>

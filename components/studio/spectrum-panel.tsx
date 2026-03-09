@@ -592,7 +592,7 @@ export function SpectrumPanel() {
     return effect.waveform.samples;
   }, [effect, source]);
 
-  const sampleRate = effect?.waveform.sampleRate ?? 8000;
+  const sampleRate = effect?.waveform.sampleRate ?? 24000;
 
   // If a region is selected, analyze just that region
   const selectedRegion = useMemo(() => {

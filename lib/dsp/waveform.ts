@@ -19,13 +19,11 @@ export function parseBinFile(buffer: ArrayBuffer, name: string): WaveformData {
     id: crypto.randomUUID(),
     name: name.replace(/\.bin$/i, ""),
     samples,
-    sampleRate: 8000,
+    sampleRate: 24000,
   };
 }
 
-export function parseEffectJson(
-  json: string
-): Record<string, EffectMetadata> {
+export function parseEffectJson(json: string): Record<string, EffectMetadata> {
   const raw = JSON.parse(json);
   const map: Record<string, EffectMetadata> = {};
 
