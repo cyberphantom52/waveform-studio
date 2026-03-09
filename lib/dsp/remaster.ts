@@ -1,7 +1,6 @@
 import type { Region } from "./region";
 import { renderTimelineRegions } from "./region";
 import type { TransformStep } from "./transforms";
-import { applyTransformChain } from "./transforms";
 import { computeStats, type WaveformStats } from "./stats";
 
 export interface RemasterResult {
@@ -9,15 +8,6 @@ export interface RemasterResult {
   clippedSamples: number;
   originalStats: WaveformStats;
   remasteredStats: WaveformStats;
-}
-
-export function createEmptyRegionOverrides(): Region["overrides"] {
-  return {
-    gain: null,
-    smoothing: null,
-    deadzone: null,
-    envelope: null,
-  };
 }
 
 export function createDefaultRegion(
@@ -34,7 +24,7 @@ export function createDefaultRegion(
     start,
     end,
     crossfadeSamples: 0,
-    overrides: createEmptyRegionOverrides(),
+    chain: [],
   };
 }
 
@@ -55,14 +45,14 @@ export function sanitizeRegion(region: Region, sampleCount: number): Region {
 export function computeRemasteredWaveform(
   original: Int8Array,
   sampleRate: number,
-  chain: TransformStep[],
+  _chain: TransformStep[],
   regions: Region[],
   cachedOriginalStats?: WaveformStats,
 ): RemasterResult {
   const originalStats =
     cachedOriginalStats ?? computeStats(original, sampleRate);
-  const { result: globalResult, clippedTotal: globalClipped } =
-    applyTransformChain(original, chain, sampleRate);
+  const globalResult = new Int8Array(original);
+  const globalClipped = 0;
   const sanitizedRegions = regions.map((region) =>
     sanitizeRegion(region, globalResult.length),
   );

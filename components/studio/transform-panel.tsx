@@ -599,12 +599,24 @@ export function TransformPanel() {
   const state = useStudio();
   const dispatch = useStudioDispatch();
   const effect = state.effects[state.activeEffectIndex];
-  const step = effect?.chain[state.activeTransformIndex];
+  const selectedClip =
+    effect?.regions.find((region) => region.id === state.selectedRegionId) ?? null;
+  const step = selectedClip?.chain[state.activeTransformIndex];
 
   if (!effect) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-xs text-muted-foreground">No effect selected</p>
+      </div>
+    );
+  }
+
+  if (!selectedClip) {
+    return (
+      <div className="flex h-full items-center justify-center gap-3">
+        <p className="text-xs text-muted-foreground">
+          Select a clip to edit its transforms
+        </p>
       </div>
     );
   }
@@ -626,7 +638,7 @@ export function TransformPanel() {
     <div className="flex h-full flex-col gap-2 px-3 py-2">
       <div className="flex items-center gap-2">
         <Badge variant="secondary" className="text-[10px] uppercase">
-          {step.type}
+          {selectedClip.name} · {step.type}
         </Badge>
         <Badge
           variant={step.enabled ? "default" : "outline"}
@@ -645,7 +657,7 @@ export function TransformPanel() {
             variant="outline"
             size="xs"
             onClick={() => dispatch({ type: "RESET_TRANSFORMS" })}
-            disabled={effect.chain.length === 0}
+            disabled={selectedClip.chain.length === 0}
           >
             <RotateCcw data-icon="inline-start" />
             Reset All

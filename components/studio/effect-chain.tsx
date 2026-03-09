@@ -94,16 +94,19 @@ export function EffectChain() {
   const state = useStudio();
   const dispatch = useStudioDispatch();
   const effect = state.effects[state.activeEffectIndex];
+  const selectedClip =
+    effect?.regions.find((region) => region.id === state.selectedRegionId) ?? null;
+  const chain = selectedClip?.chain ?? [];
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-2 py-1">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          Effect Chain
+          {selectedClip ? `${selectedClip.name} Chain` : "Clip Chain"}
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" disabled={!effect}>
+            <Button variant="ghost" size="icon-xs" disabled={!selectedClip}>
               <Plus data-icon="inline-start" />
             </Button>
           </DropdownMenuTrigger>
@@ -135,7 +138,13 @@ export function EffectChain() {
               Import a .bin file to begin
             </p>
           </div>
-        ) : effect.chain.length === 0 ? (
+        ) : !selectedClip ? (
+          <div className="flex h-32 items-center justify-center p-4">
+            <p className="text-center text-xs text-muted-foreground">
+              Select a clip on the timeline to edit its transforms
+            </p>
+          </div>
+        ) : chain.length === 0 ? (
           <div className="flex h-32 items-center justify-center p-4">
             <p className="text-center text-xs text-muted-foreground">
               No transforms. Click + to add.
@@ -143,7 +152,7 @@ export function EffectChain() {
           </div>
         ) : (
           <div className="flex flex-col">
-            {effect.chain.map((step, i) => {
+            {chain.map((step, i) => {
               const Icon = TRANSFORM_ICONS[step.type];
               const isActive = i === state.activeTransformIndex;
               return (
@@ -196,7 +205,7 @@ export function EffectChain() {
                       <Trash2 className="size-3" />
                     </Button>
                   </div>
-                  {i < effect.chain.length - 1 && <Separator />}
+                  {i < chain.length - 1 && <Separator />}
                 </div>
               );
             })}

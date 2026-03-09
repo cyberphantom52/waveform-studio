@@ -53,12 +53,6 @@ export function StudioPage() {
                     >
                       Browse
                     </TabsTrigger>
-                    <TabsTrigger
-                      value="regions"
-                      className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
-                    >
-                      Clips
-                    </TabsTrigger>
                   </TabsList>
                   <TabsContent
                     value="chain"
@@ -71,12 +65,6 @@ export function StudioPage() {
                     className="mt-0 flex-1 overflow-hidden"
                   >
                     <FamilyBrowser />
-                  </TabsContent>
-                  <TabsContent
-                    value="regions"
-                    className="mt-0 flex-1 overflow-hidden"
-                  >
-                    <RegionEditor />
                   </TabsContent>
                 </Tabs>
                 <Separator />
@@ -138,7 +126,15 @@ export function StudioPage() {
                     value="props"
                     className="mt-0 flex-1 overflow-hidden"
                   >
-                    <PropertiesPanel />
+                    <div className="flex h-full min-h-0 min-w-0 flex-col">
+                      <div className="min-h-0 flex-1 overflow-hidden">
+                        <PropertiesPanel />
+                      </div>
+                      <Separator />
+                      <div className="min-h-0 flex-1 overflow-hidden">
+                        <RegionEditor />
+                      </div>
+                    </div>
                   </TabsContent>
                 </Tabs>
               </div>

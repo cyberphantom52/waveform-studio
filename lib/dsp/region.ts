@@ -1,5 +1,4 @@
 import {
-  type TransformParams,
   type TransformStep,
   applyTransformChain,
 } from "./transforms";
@@ -11,12 +10,7 @@ export interface Region {
   start: number;
   end: number;
   crossfadeSamples: number;
-  overrides: {
-    gain: TransformParams["gain"] | null;
-    smoothing: TransformParams["smoothing"] | null;
-    deadzone: TransformParams["deadzone"] | null;
-    envelope: TransformParams["envelope"] | null;
-  };
+  chain: TransformStep[];
 }
 
 export interface RegionApplyResult {
@@ -24,23 +18,12 @@ export interface RegionApplyResult {
   clippedTotal: number;
 }
 
-function cloneRegionOverrides(region: Region): Region["overrides"] {
-  return {
-    gain: region.overrides.gain ? { ...region.overrides.gain } : null,
-    smoothing: region.overrides.smoothing
-      ? { ...region.overrides.smoothing }
-      : null,
-    deadzone: region.overrides.deadzone
-      ? { ...region.overrides.deadzone }
-      : null,
-    envelope: region.overrides.envelope
-      ? {
-          points: region.overrides.envelope.points.map((point) => ({
-            ...point,
-          })),
-        }
-      : null,
-  };
+function cloneRegionChain(region: Region) {
+  return region.chain.map((step) => ({
+    type: step.type,
+    enabled: step.enabled,
+    params: structuredClone(step.params),
+  }));
 }
 
 function clampRegionRange(region: Region, sampleCount: number): Region {
@@ -54,7 +37,7 @@ function clampRegionRange(region: Region, sampleCount: number): Region {
       0,
       Math.min(region.crossfadeSamples, Math.floor((end - start) / 2)),
     ),
-    overrides: cloneRegionOverrides(region),
+    chain: cloneRegionChain(region),
   };
 }
 
@@ -75,7 +58,7 @@ function createRegionSegment(
       0,
       Math.min(region.crossfadeSamples, Math.floor((end - start) / 2)),
     ),
-    overrides: cloneRegionOverrides(region),
+    chain: cloneRegionChain(region),
   };
 }
 
@@ -139,7 +122,7 @@ export function getTimelineLength(regions: Region[], fallbackLength: number) {
 function cloneRegion(region: Region): Region {
   return {
     ...region,
-    overrides: cloneRegionOverrides(region),
+    chain: cloneRegionChain(region),
   };
 }
 
@@ -159,7 +142,7 @@ function createTimelineRegion(
       start,
       end,
       crossfadeSamples: 0,
-      overrides: cloneRegionOverrides(region),
+      chain: cloneRegionChain(region),
     };
   }
 
@@ -170,12 +153,7 @@ function createTimelineRegion(
     start,
     end,
     crossfadeSamples: 0,
-    overrides: {
-      gain: null,
-      smoothing: null,
-      deadzone: null,
-      envelope: null,
-    },
+    chain: [],
   };
 }
 
@@ -283,36 +261,7 @@ export function splitTimelineRegionsAtSelection(
 }
 
 function buildRegionChain(region: Region): TransformStep[] {
-  const steps: TransformStep[] = [];
-  if (region.overrides.gain) {
-    steps.push({
-      type: "gain",
-      enabled: true,
-      params: region.overrides.gain,
-    });
-  }
-  if (region.overrides.envelope) {
-    steps.push({
-      type: "envelope",
-      enabled: true,
-      params: region.overrides.envelope,
-    });
-  }
-  if (region.overrides.smoothing) {
-    steps.push({
-      type: "smoothing",
-      enabled: true,
-      params: region.overrides.smoothing,
-    });
-  }
-  if (region.overrides.deadzone) {
-    steps.push({
-      type: "deadzone",
-      enabled: true,
-      params: region.overrides.deadzone,
-    });
-  }
-  return steps;
+  return cloneRegionChain(region);
 }
 
 function crossfadeBlend(

@@ -6,11 +6,9 @@ import {
   parseEffectJson,
   waveformToArrayBuffer,
 } from "@/lib/dsp/waveform";
-import { applyTransformChain } from "@/lib/dsp/transforms";
 import {
   computeRemasteredWaveform,
   createDefaultRegion,
-  createEmptyRegionOverrides,
 } from "@/lib/dsp/remaster";
 import {
   buildTimelineSamples,
@@ -127,11 +125,7 @@ export function getTimelineOriginalSamples(effect: StudioEffect) {
 }
 
 export function getRenderedRegionSamples(effect: StudioEffect, region: Region) {
-  const { result: globalResult } = applyTransformChain(
-    effect.waveform.samples,
-    effect.chain,
-    effect.waveform.sampleRate,
-  );
+  const globalResult = new Int8Array(effect.waveform.samples);
 
   const normalizedRegion = {
     ...region,
@@ -234,7 +228,7 @@ export async function buildManifest(state: StudioState) {
         playRateHz: effect.playRateHz,
         notes: effect.notes,
         selected: effect.selected,
-        params: effect.chain,
+        params: [],
         regions: effect.regions,
         beforeStats,
         afterStats,
@@ -283,6 +277,6 @@ export function createRegionSelection(
     start: safeStart,
     end: safeEnd,
     crossfadeSamples: 0,
-    overrides: createEmptyRegionOverrides(),
+    chain: [],
   };
 }

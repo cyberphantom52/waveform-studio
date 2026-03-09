@@ -252,54 +252,6 @@ export function PropertiesPanel() {
               ))
             )}
           </div>
-
-          <Separator className="my-1" />
-          <div className="px-2">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Transform Chain
-            </span>
-          </div>
-          <div className="px-2">
-            {effect.chain.length === 0 ? (
-              <span className="text-xs text-muted-foreground">Empty</span>
-            ) : (
-              <div className="flex flex-wrap gap-1">
-                {effect.chain.map((step, i) => (
-                  <Badge
-                    key={i}
-                    variant={step.enabled ? "secondary" : "outline"}
-                    className="text-[10px]"
-                  >
-                    {step.type}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {effect.regions.length > 0 && (
-            <>
-              <Separator className="my-1" />
-              <div className="px-2">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Clips ({effect.regions.length})
-                </span>
-              </div>
-              {effect.regions.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between px-2"
-                >
-                  <span className="text-xs tabular-nums">
-                    {r.name} [{r.start}-{r.end}]
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    xfade: {r.crossfadeSamples}
-                  </span>
-                </div>
-              ))}
-            </>
-          )}
         </div>
       </ScrollArea>
     </div>

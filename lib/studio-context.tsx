@@ -118,6 +118,35 @@ type Action =
   | { type: "REDO" }
   | { type: "BATCH_ADD_EFFECTS"; effects: StudioEffect[] };
 
+function getSelectedClip(effect: StudioEffect | undefined, selectedRegionId: string | null) {
+  if (!effect || !selectedRegionId) return null;
+  return effect.regions.find((region) => region.id === selectedRegionId) ?? null;
+}
+
+function getChainTarget(effect: StudioEffect | undefined, selectedRegionId: string | null) {
+  const clip = getSelectedClip(effect, selectedRegionId);
+  return clip?.chain ?? [];
+}
+
+function updateSelectedClipChain(
+  effect: StudioEffect,
+  selectedRegionId: string | null,
+  updater: (chain: TransformStep[]) => TransformStep[],
+) {
+  if (!selectedRegionId) return effect;
+  const clip = getSelectedClip(effect, selectedRegionId);
+  if (!clip) return effect;
+
+  return {
+    ...effect,
+    regions: effect.regions.map((region) =>
+      region.id === selectedRegionId
+        ? { ...region, chain: updater(region.chain.map(cloneTransformStep)) }
+        : region,
+    ),
+  };
+}
+
 function cloneTransformStep(step: TransformStep): TransformStep {
   return {
     type: step.type,
@@ -129,22 +158,7 @@ function cloneTransformStep(step: TransformStep): TransformStep {
 function cloneRegion(region: Region): Region {
   return {
     ...region,
-    overrides: {
-      gain: region.overrides.gain ? { ...region.overrides.gain } : null,
-      smoothing: region.overrides.smoothing
-        ? { ...region.overrides.smoothing }
-        : null,
-      deadzone: region.overrides.deadzone
-        ? { ...region.overrides.deadzone }
-        : null,
-      envelope: region.overrides.envelope
-        ? {
-            points: region.overrides.envelope.points.map((point) => ({
-              ...point,
-            })),
-          }
-        : null,
-    },
+    chain: region.chain.map(cloneTransformStep),
   };
 }
 
@@ -268,27 +282,29 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     case "ADD_EFFECT": {
       const s = pushUndo(state);
       const effects = [...s.effects, cloneEffect(action.effect)];
+      const selectedRegionId = effects.at(-1)?.regions[0]?.id ?? null;
       return {
         ...s,
         effects,
         families: buildFamilies(effects),
         activeEffectIndex: effects.length - 1,
-        activeTransformIndex: 0,
+        activeTransformIndex: -1,
         zoom: { start: 0, end: 1 },
-        selectedRegionId: null,
+        selectedRegionId,
       };
     }
     case "BATCH_ADD_EFFECTS": {
       const s = pushUndo(state);
       const effects = [...s.effects, ...action.effects.map(cloneEffect)];
+      const selectedRegionId = effects.at(-1)?.regions[0]?.id ?? null;
       return {
         ...s,
         effects,
         families: buildFamilies(effects),
         activeEffectIndex: effects.length - 1,
-        activeTransformIndex: 0,
+        activeTransformIndex: -1,
         zoom: { start: 0, end: 1 },
-        selectedRegionId: null,
+        selectedRegionId,
       };
     }
     case "REMOVE_EFFECT": {
@@ -331,12 +347,17 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       };
     }
     case "SET_ACTIVE_EFFECT":
-      return {
-        ...state,
-        activeEffectIndex: action.index,
-        activeTransformIndex: 0,
-        selectedRegionId: null,
-      };
+      {
+        const effect = state.effects[action.index];
+        const selectedRegionId = effect?.regions[0]?.id ?? null;
+        const chain = getChainTarget(effect, selectedRegionId);
+        return {
+          ...state,
+          activeEffectIndex: action.index,
+          activeTransformIndex: chain.length > 0 ? 0 : -1,
+          selectedRegionId,
+        };
+      }
     case "SET_ACTIVE_TRANSFORM":
       return { ...state, activeTransformIndex: action.index };
     case "TOGGLE_EFFECT_SELECTION": {
@@ -363,16 +384,19 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     case "ADD_TRANSFORM": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
-      if (!effect) return s;
+      if (!effect || !s.selectedRegionId) return s;
       const newStep: TransformStep = {
         type: action.transformType,
         enabled: true,
         params: getDefaultParams(action.transformType),
       };
-      const updated = recomputeRemaster({
-        ...effect,
-        chain: [...effect.chain, newStep],
-      });
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(effect, s.selectedRegionId, (chain) => [
+          ...chain,
+          newStep,
+        ]),
+      );
+      const updatedClip = getSelectedClip(updated, s.selectedRegionId);
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -380,30 +404,49 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         ...s,
         effects,
         families: buildFamilies(effects),
-        activeTransformIndex: updated.chain.length - 1,
+        activeTransformIndex: (updatedClip?.chain.length ?? 1) - 1,
       };
     }
     case "REMOVE_TRANSFORM": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
-      if (!effect) return s;
-      const chain = effect.chain.filter((_, i) => i !== action.index);
-      const updated = recomputeRemaster({ ...effect, chain });
+      if (!effect || !s.selectedRegionId) return s;
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(
+          effect,
+          s.selectedRegionId,
+          (chain) => chain.filter((_, i) => i !== action.index),
+        ),
+      );
+      const updatedClip = getSelectedClip(updated, s.selectedRegionId);
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
-      return { ...s, effects };
+      return {
+        ...s,
+        effects,
+        activeTransformIndex:
+          updatedClip && updatedClip.chain.length > 0
+            ? Math.min(action.index, updatedClip.chain.length - 1)
+            : -1,
+      };
     }
     case "RESET_TRANSFORMS": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
-      if (!effect) return s;
-      const chain = effect.chain.map((step) => ({
-        ...step,
-        enabled: true,
-        params: getDefaultParams(step.type),
-      }));
-      const updated = recomputeRemaster({ ...effect, chain });
+      if (!effect || !s.selectedRegionId) return s;
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(
+          effect,
+          s.selectedRegionId,
+          (chain) =>
+            chain.map((step) => ({
+              ...step,
+              enabled: true,
+              params: getDefaultParams(step.type),
+            })),
+        ),
+      );
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -412,11 +455,11 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     case "SET_CHAIN": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
-      if (!effect) return s;
-      const updated = recomputeRemaster({
-        ...effect,
-        chain: action.chain.map(cloneTransformStep),
-      });
+      if (!effect || !s.selectedRegionId) return s;
+      const nextChain = action.chain.map(cloneTransformStep);
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(effect, s.selectedRegionId, () => nextChain),
+      );
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -424,17 +467,23 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         ...s,
         effects,
         families: buildFamilies(effects),
-        activeTransformIndex: updated.chain.length > 0 ? 0 : -1,
+        activeTransformIndex: nextChain.length > 0 ? 0 : -1,
       };
     }
     case "TOGGLE_TRANSFORM": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
-      if (!effect) return s;
-      const chain = effect.chain.map((step, i) =>
-        i === action.index ? { ...step, enabled: !step.enabled } : step,
+      if (!effect || !s.selectedRegionId) return s;
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(
+          effect,
+          s.selectedRegionId,
+          (chain) =>
+            chain.map((step, i) =>
+              i === action.index ? { ...step, enabled: !step.enabled } : step,
+            ),
+        ),
       );
-      const updated = recomputeRemaster({ ...effect, chain });
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -442,11 +491,17 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     }
     case "UPDATE_TRANSFORM_PARAMS": {
       const effect = state.effects[state.activeEffectIndex];
-      if (!effect) return state;
-      const chain = effect.chain.map((step, i) =>
-        i === action.index ? { ...step, params: action.params } : step,
+      if (!effect || !state.selectedRegionId) return state;
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(
+          effect,
+          state.selectedRegionId,
+          (chain) =>
+            chain.map((step, i) =>
+              i === action.index ? { ...step, params: action.params } : step,
+            ),
+        ),
       );
-      const updated = recomputeRemaster({ ...effect, chain });
       const effects = state.effects.map((e, i) =>
         i === state.activeEffectIndex ? updated : e,
       );
@@ -455,11 +510,15 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     case "REORDER_TRANSFORMS": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
-      if (!effect) return s;
-      const chain = [...effect.chain];
-      const [removed] = chain.splice(action.fromIndex, 1);
-      chain.splice(action.toIndex, 0, removed);
-      const updated = recomputeRemaster({ ...effect, chain });
+      if (!effect || !s.selectedRegionId) return s;
+      const updated = recomputeRemaster(
+        updateSelectedClipChain(effect, s.selectedRegionId, (chain) => {
+          const nextChain = [...chain];
+          const [removed] = nextChain.splice(action.fromIndex, 1);
+          nextChain.splice(action.toIndex, 0, removed);
+          return nextChain;
+        }),
+      );
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -493,7 +552,12 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
-      return { ...s, effects, selectedRegionId: action.region.id };
+      return {
+        ...s,
+        effects,
+        selectedRegionId: action.region.id,
+        activeTransformIndex: action.region.chain.length > 0 ? 0 : -1,
+      };
     }
     case "SET_REGIONS": {
       const s = pushUndo(state);
@@ -524,6 +588,8 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         effects,
         selectedRegionId:
           s.selectedRegionId === action.id ? null : s.selectedRegionId,
+        activeTransformIndex:
+          s.selectedRegionId === action.id ? -1 : s.activeTransformIndex,
       };
     }
     case "CLEAR_REGIONS": {
@@ -537,7 +603,12 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
-      return { ...s, effects, selectedRegionId: null };
+      return {
+        ...s,
+        effects,
+        selectedRegionId: updated.regions[0]?.id ?? null,
+        activeTransformIndex: updated.regions[0]?.chain.length ? 0 : -1,
+      };
     }
     case "UPDATE_REGION": {
       const s = pushUndo(state);
@@ -555,7 +626,15 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return { ...s, effects };
     }
     case "SET_SELECTED_REGION":
-      return { ...state, selectedRegionId: action.id };
+      {
+        const effect = state.effects[state.activeEffectIndex];
+        const chain = getChainTarget(effect, action.id);
+        return {
+          ...state,
+          selectedRegionId: action.id,
+          activeTransformIndex: chain.length > 0 ? 0 : -1,
+        };
+      }
     case "SET_METADATA": {
       const effects = state.effects.map((e) => {
         const meta =
