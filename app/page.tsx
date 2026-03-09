@@ -1,17 +1,12 @@
-import { Hero } from "@/components/landing/hero";
-import { Features } from "@/components/landing/features";
-import { WaveformDemo } from "@/components/landing/waveform-demo";
-import { Stats } from "@/components/landing/stats";
-import { Footer } from "@/components/landing/footer";
+import { StudioProvider } from "@/lib/studio-context";
+import { StudioPage } from "@/components/studio/studio-page";
 
 export default function Home() {
   return (
-    <main className="dark">
-      <Hero />
-      <Features />
-      <WaveformDemo />
-      <Stats />
-      <Footer />
-    </main>
+    <div className="dark h-screen w-screen overflow-hidden bg-background text-foreground">
+      <StudioProvider>
+        <StudioPage />
+      </StudioProvider>
+    </div>
   );
 }
