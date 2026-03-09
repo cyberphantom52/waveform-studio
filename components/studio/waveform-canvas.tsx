@@ -3,6 +3,7 @@
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import { computeDelta } from "@/lib/dsp/stats";
 import { createRegionSelection } from "@/lib/studio-io";
+import { clampZoomWindow, scaleZoomWindow } from "@/lib/zoom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -15,7 +16,7 @@ function pathFromSamples(
   height: number,
   minValue: number,
   maxValue: number,
-  density: number
+  density: number,
 ) {
   if (!samples.length || width <= 0 || height <= 0) return "";
   const maxPoints = Math.max(32, Math.floor(width * Math.max(1, density)));
@@ -28,7 +29,9 @@ function pathFromSamples(
     const x = (index / Math.max(1, samples.length - 1)) * width;
     const normalized = (sample - minValue) / valueRange;
     const y = height - normalized * height;
-    points.push(`${points.length === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`);
+    points.push(
+      `${points.length === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`,
+    );
   }
 
   return points.join(" ");
@@ -37,8 +40,13 @@ function pathFromSamples(
 export function WaveformCanvas() {
   const state = useStudio();
   const dispatch = useStudioDispatch();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const scrollbarRef = useRef<HTMLDivElement>(null);
+  const syncingScrollRef = useRef(false);
+  const panStateRef = useRef<{ startClientX: number; startZoomStart: number } | null>(null);
+  const suppressClickRef = useRef(false);
   const [width, setWidth] = useState(0);
+  const [isPanning, setIsPanning] = useState(false);
   const [regionSelectMode, setRegionSelectMode] = useState(false);
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragCurrentX, setDragCurrentX] = useState<number | null>(null);
@@ -46,7 +54,7 @@ export function WaveformCanvas() {
   const canvasHeight = state.canvasConfig.height;
 
   useEffect(() => {
-    const element = containerRef.current;
+    const element = viewportRef.current;
     if (!element) return;
 
     const updateSize = () => {
@@ -63,24 +71,87 @@ export function WaveformCanvas() {
   const original = effect?.waveform.samples ?? new Int8Array();
   const remastered = effect?.remastered ?? original;
   const baseLength = Math.max(original.length, remastered.length, 1);
+  const minZoomRange = 1 / baseLength;
+  const zoomRange = state.zoom.end - state.zoom.start;
   const startSample = Math.floor(state.zoom.start * baseLength);
-  const endSample = Math.max(startSample + 1, Math.ceil(state.zoom.end * baseLength));
+  const endSample = Math.max(
+    startSample + 1,
+    Math.ceil(state.zoom.end * baseLength),
+  );
   const visibleOriginal = original.slice(
     Math.min(startSample, original.length),
-    Math.min(endSample, original.length)
+    Math.min(endSample, original.length),
   );
   const visibleRemastered = remastered.slice(
     Math.min(startSample, remastered.length),
-    Math.min(endSample, remastered.length)
+    Math.min(endSample, remastered.length),
   );
-  const visibleDiff = computeDelta(
-    visibleOriginal,
-    visibleRemastered
-  );
+  const visibleDiff = computeDelta(visibleOriginal, visibleRemastered);
 
   const margin = { top: 12, right: 8, bottom: 26, left: 42 };
   const innerWidth = Math.max(0, width - margin.left - margin.right);
   const innerHeight = Math.max(0, canvasHeight - margin.top - margin.bottom);
+  const scrollContentWidth =
+    width > 0 ? Math.max(width + 1, Math.round(width / zoomRange)) : 0;
+  const maxScrollLeft = Math.max(0, scrollContentWidth - width);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!effect || innerWidth <= 0) return;
+
+      const dominantDelta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+
+        const bounds = element.getBoundingClientRect();
+        const relativeX = Math.min(
+          Math.max(event.clientX - bounds.left - margin.left, 0),
+          innerWidth,
+        );
+        const anchor = innerWidth > 0 ? relativeX / innerWidth : 0.5;
+        const zoomFactor = Math.exp(event.deltaY * 0.0025);
+        const nextZoom = scaleZoomWindow(
+          state.zoom,
+          zoomFactor,
+          anchor,
+          minZoomRange,
+        );
+        dispatch({ type: "SET_ZOOM", ...nextZoom });
+        return;
+      }
+
+      if (dominantDelta === 0) return;
+    };
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, [dispatch, effect, innerWidth, margin.left, minZoomRange, state.zoom, zoomRange]);
+
+  useEffect(() => {
+    const element = scrollbarRef.current;
+    if (!element) return;
+
+    const maxStart = Math.max(0, 1 - zoomRange);
+    const targetScrollLeft =
+      maxScrollLeft > 0 && maxStart > 0
+        ? (state.zoom.start / maxStart) * maxScrollLeft
+        : 0;
+
+    if (Math.abs(element.scrollLeft - targetScrollLeft) < 1) return;
+
+    syncingScrollRef.current = true;
+    element.scrollLeft = targetScrollLeft;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, [maxScrollLeft, state.zoom.start, zoomRange]);
 
   const xForSample = (sample: number) => {
     const span = Math.max(1, endSample - startSample);
@@ -101,9 +172,9 @@ export function WaveformCanvas() {
         innerHeight,
         -128,
         127,
-        state.canvasConfig.density
+        state.canvasConfig.density,
       ),
-    [visibleOriginal, innerWidth, innerHeight, state.canvasConfig.density]
+    [visibleOriginal, innerWidth, innerHeight, state.canvasConfig.density],
   );
   const remasteredPath = useMemo(
     () =>
@@ -113,9 +184,9 @@ export function WaveformCanvas() {
         innerHeight,
         -128,
         127,
-        state.canvasConfig.density
+        state.canvasConfig.density,
       ),
-    [visibleRemastered, innerWidth, innerHeight, state.canvasConfig.density]
+    [visibleRemastered, innerWidth, innerHeight, state.canvasConfig.density],
   );
   const diffPath = useMemo(
     () =>
@@ -125,9 +196,9 @@ export function WaveformCanvas() {
         innerHeight,
         -255,
         255,
-        state.canvasConfig.density
+        state.canvasConfig.density,
       ),
-    [visibleDiff, innerWidth, innerHeight, state.canvasConfig.density]
+    [visibleDiff, innerWidth, innerHeight, state.canvasConfig.density],
   );
 
   const selectionBounds =
@@ -144,11 +215,86 @@ export function WaveformCanvas() {
     const right = Math.min(innerWidth, selectionBounds.right);
     if (right - left < 4) return;
     const span = Math.max(1, endSample - startSample);
-    const selectionStart = startSample + Math.floor((left / Math.max(1, innerWidth)) * span);
-    const selectionEnd = startSample + Math.ceil((right / Math.max(1, innerWidth)) * span);
+    const selectionStart =
+      startSample + Math.floor((left / Math.max(1, innerWidth)) * span);
+    const selectionEnd =
+      startSample + Math.ceil((right / Math.max(1, innerWidth)) * span);
     dispatch({
       type: "ADD_REGION",
-      region: createRegionSelection(selectionStart, selectionEnd, effect.regions),
+      region: createRegionSelection(
+        selectionStart,
+        selectionEnd,
+        effect.regions,
+      ),
+    });
+  };
+
+  const handlePanStart = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (
+      regionSelectMode ||
+      zoomRange >= 1 ||
+      event.button !== 0 ||
+      innerWidth <= 0
+    ) {
+      return;
+    }
+
+    panStateRef.current = {
+      startClientX: event.clientX,
+      startZoomStart: state.zoom.start,
+    };
+    suppressClickRef.current = false;
+    setIsPanning(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const handlePanMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    const panState = panStateRef.current;
+    if (!panState || innerWidth <= 0) return;
+
+    const deltaX = event.clientX - panState.startClientX;
+    if (Math.abs(deltaX) > 3) {
+      suppressClickRef.current = true;
+    }
+
+    const panDelta = (-deltaX / innerWidth) * zoomRange;
+    const nextZoom = clampZoomWindow(
+      panState.startZoomStart + panDelta,
+      panState.startZoomStart + zoomRange + panDelta,
+      minZoomRange,
+    );
+    dispatch({ type: "SET_ZOOM", ...nextZoom });
+  };
+
+  const handlePanEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!panStateRef.current) return;
+
+    panStateRef.current = null;
+    setIsPanning(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (suppressClickRef.current) {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+  };
+
+  const handleScrollbarScroll = () => {
+    const element = scrollbarRef.current;
+    if (!element || syncingScrollRef.current || maxScrollLeft <= 0) return;
+
+    const maxStart = Math.max(0, 1 - zoomRange);
+    if (maxStart <= 0) return;
+
+    const nextStart = (element.scrollLeft / maxScrollLeft) * maxStart;
+    dispatch({
+      type: "SET_ZOOM",
+      start: nextStart,
+      end: nextStart + zoomRange,
     });
   };
 
@@ -162,14 +308,21 @@ export function WaveformCanvas() {
           type="single"
           value={state.viewMode}
           onValueChange={(value) => {
-            if (value) dispatch({ type: "SET_VIEW_MODE", mode: value as typeof state.viewMode });
+            if (value)
+              dispatch({
+                type: "SET_VIEW_MODE",
+                mode: value as typeof state.viewMode,
+              });
           }}
           className="gap-0"
         >
           <ToggleGroupItem value="original" className="h-5 px-1.5 text-[10px]">
             OG
           </ToggleGroupItem>
-          <ToggleGroupItem value="remastered" className="h-5 px-1.5 text-[10px]">
+          <ToggleGroupItem
+            value="remastered"
+            className="h-5 px-1.5 text-[10px]"
+          >
             RM
           </ToggleGroupItem>
           <ToggleGroupItem value="diff" className="h-5 px-1.5 text-[10px]">
@@ -209,14 +362,20 @@ export function WaveformCanvas() {
             step={0.5}
             value={[state.canvasConfig.density]}
             onValueChange={([value]) =>
-              dispatch({ type: "SET_CANVAS_CONFIG", config: { density: value } })
+              dispatch({
+                type: "SET_CANVAS_CONFIG",
+                config: { density: value },
+              })
             }
             className="w-20"
           />
         </div>
       </div>
 
-      <div ref={containerRef} className="relative flex-1 overflow-auto bg-background">
+      <div
+        ref={viewportRef}
+        className="relative flex-1 overflow-hidden bg-background"
+      >
         {!effect ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-xs text-muted-foreground">
@@ -227,7 +386,11 @@ export function WaveformCanvas() {
           <svg
             width={width}
             height={canvasHeight}
-            className="block"
+            className={isPanning ? "block cursor-grabbing" : zoomRange < 1 && !regionSelectMode ? "block cursor-grab" : "block"}
+            onPointerDown={handlePanStart}
+            onPointerMove={handlePanMove}
+            onPointerUp={handlePanEnd}
+            onPointerCancel={handlePanEnd}
             onMouseLeave={() => {
               if (dragStartX !== null) {
                 createSelectionFromDrag();
@@ -275,18 +438,21 @@ export function WaveformCanvas() {
                 const regionEnd = Math.min(endSample, region.end);
                 if (regionEnd <= regionStart) return null;
                 const x = xForSample(regionStart);
-                const width = Math.max(1, xForSample(regionEnd) - x);
+                const regionWidth = Math.max(1, xForSample(regionEnd) - x);
                 const isSelected = region.id === state.selectedRegionId;
                 return (
                   <g
                     key={region.id}
-                    onClick={() => dispatch({ type: "SET_SELECTED_REGION", id: region.id })}
-                    style={{ cursor: "pointer" }}
+                    onClick={() => {
+                      if (suppressClickRef.current) return;
+                      dispatch({ type: "SET_SELECTED_REGION", id: region.id });
+                    }}
+                    style={{ cursor: regionSelectMode ? "crosshair" : "pointer" }}
                   >
                     <rect
                       x={x}
                       y={0}
-                      width={width}
+                      width={regionWidth}
                       height={innerHeight}
                       fill="var(--waveform-accent)"
                       opacity={isSelected ? 0.22 : 0.1}
@@ -301,15 +467,15 @@ export function WaveformCanvas() {
                       opacity={0.6}
                     />
                     <line
-                      x1={x + width}
-                      x2={x + width}
+                      x1={x + regionWidth}
+                      x2={x + regionWidth}
                       y1={0}
                       y2={innerHeight}
                       stroke="var(--waveform-accent)"
                       strokeWidth={isSelected ? 2 : 1}
                       opacity={0.6}
                     />
-                    {width > 56 && (
+                    {regionWidth > 56 && (
                       <text
                         x={x + 6}
                         y={14}
@@ -323,17 +489,20 @@ export function WaveformCanvas() {
                 );
               })}
 
-              {(state.viewMode === "original" || state.viewMode === "overlay") && originalPath && (
-                <path
-                  d={originalPath}
-                  fill="none"
-                  stroke="var(--waveform-original)"
-                  strokeWidth={1}
-                  opacity={state.viewMode === "overlay" ? 0.45 : 1}
-                />
-              )}
+              {(state.viewMode === "original" ||
+                state.viewMode === "overlay") &&
+                originalPath && (
+                  <path
+                    d={originalPath}
+                    fill="none"
+                    stroke="var(--waveform-original)"
+                    strokeWidth={1}
+                    opacity={state.viewMode === "overlay" ? 0.45 : 1}
+                  />
+                )}
 
-              {(state.viewMode === "remastered" || state.viewMode === "overlay") &&
+              {(state.viewMode === "remastered" ||
+                state.viewMode === "overlay") &&
                 remasteredPath && (
                   <path
                     d={remasteredPath}
@@ -400,7 +569,9 @@ export function WaveformCanvas() {
               />
 
               {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-                const sample = Math.round(startSample + (endSample - startSample) * ratio);
+                const sample = Math.round(
+                  startSample + (endSample - startSample) * ratio,
+                );
                 const x = innerWidth * ratio;
                 return (
                   <g key={ratio}>
@@ -415,7 +586,9 @@ export function WaveformCanvas() {
                     <text
                       x={x}
                       y={innerHeight + 16}
-                      textAnchor={ratio === 0 ? "start" : ratio === 1 ? "end" : "middle"}
+                      textAnchor={
+                        ratio === 0 ? "start" : ratio === 1 ? "end" : "middle"
+                      }
                       fill="var(--muted-foreground)"
                       fontSize="9"
                     >
@@ -428,6 +601,16 @@ export function WaveformCanvas() {
           </svg>
         )}
       </div>
+
+      {effect && zoomRange < 1 && (
+        <div
+          ref={scrollbarRef}
+          className="h-4 overflow-x-auto overflow-y-hidden border-t border-border bg-background"
+          onScroll={handleScrollbarScroll}
+        >
+          <div style={{ width: scrollContentWidth, height: 1 }} />
+        </div>
+      )}
     </div>
   );
 }

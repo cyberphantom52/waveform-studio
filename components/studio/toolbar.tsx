@@ -30,6 +30,7 @@ import {
   importStudioFiles,
   promptDownload,
 } from "@/lib/studio-io";
+import { scaleZoomWindow } from "@/lib/zoom";
 
 export function Toolbar() {
   const state = useStudio();
@@ -208,15 +209,8 @@ export function Toolbar() {
             variant="ghost"
             size="icon-xs"
             onClick={() => {
-              const z = state.zoom;
-              const range = z.end - z.start;
-              const center = (z.start + z.end) / 2;
-              const newRange = range * 0.5;
-              dispatch({
-                type: "SET_ZOOM",
-                start: Math.max(0, center - newRange / 2),
-                end: Math.min(1, center + newRange / 2),
-              });
+              const nextZoom = scaleZoomWindow(state.zoom, 0.5);
+              dispatch({ type: "SET_ZOOM", ...nextZoom });
             }}
           >
             <ZoomIn data-icon="inline-start" />
@@ -231,15 +225,8 @@ export function Toolbar() {
             variant="ghost"
             size="icon-xs"
             onClick={() => {
-              const z = state.zoom;
-              const range = z.end - z.start;
-              const center = (z.start + z.end) / 2;
-              const newRange = Math.min(1, range * 2);
-              dispatch({
-                type: "SET_ZOOM",
-                start: Math.max(0, center - newRange / 2),
-                end: Math.min(1, center + newRange / 2),
-              });
+              const nextZoom = scaleZoomWindow(state.zoom, 2);
+              dispatch({ type: "SET_ZOOM", ...nextZoom });
             }}
           >
             <ZoomOut data-icon="inline-start" />

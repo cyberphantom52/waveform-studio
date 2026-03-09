@@ -13,6 +13,7 @@ import { getDefaultParams } from "./dsp/transforms";
 import type { Region } from "./dsp/region";
 import type { WaveformStats } from "./dsp/stats";
 import { computeRemasteredWaveform } from "./dsp/remaster";
+import { clampZoomWindow } from "./zoom";
 
 export interface EffectRemasterInfo {
   clippedSamples: number;
@@ -477,7 +478,7 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     case "SET_VIEW_MODE":
       return { ...state, viewMode: action.mode };
     case "SET_ZOOM":
-      return { ...state, zoom: { start: action.start, end: action.end } };
+      return { ...state, zoom: clampZoomWindow(action.start, action.end) };
     case "ADD_REGION": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
