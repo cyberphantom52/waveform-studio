@@ -374,10 +374,6 @@ export function WaveformCanvas() {
       .sort((left, right) => left.timelineStart - right.timelineStart);
   }, [draggedClipStart, effect, selectedClip?.id]);
 
-  const totalTimelineLength = timelineRegions.reduce(
-    (max, region) => Math.max(max, region.timelineEnd),
-    0,
-  );
   const selectedClipEntry =
     timelineRegions.find((region) => region.region.id === state.selectedRegionId) ?? null;
 
@@ -455,7 +451,7 @@ export function WaveformCanvas() {
     const target = event.target as Element | null;
     const selectionHandle = target?.closest("[data-selection-handle]");
     const selectionBody = target?.closest("[data-selection-body]");
-    const clipTarget = target?.closest("[data-clip-id]");
+    const clipTarget = target?.closest("[data-clip-lane-hit][data-clip-id]");
 
     if (event.button === 0 && selectionRange && selectionHandle) {
       const mode = selectionHandle.getAttribute("data-selection-handle");
@@ -510,7 +506,7 @@ export function WaveformCanvas() {
         minStart: previousRegion ? previousRegion.timelineEnd : 0,
         maxStart: nextRegion
           ? nextRegion.timelineStart - clipLength
-          : totalTimelineLength + clipLength,
+          : Math.max(0, effect.waveform.samples.length - clipLength),
       };
       setDraggedClipStart(selectedClipEntry.timelineStart);
       suppressClickRef.current = false;
@@ -868,17 +864,7 @@ export function WaveformCanvas() {
                 const regionWidth = Math.max(1, xForSample(regionEnd) - x);
                 const isSelected = region.id === state.selectedRegionId;
                 return (
-                  <g
-                    key={region.id}
-                    data-clip-id={region.id}
-                    onClick={() => {
-                      if (suppressClickRef.current) return;
-                      setSelectionRange(null);
-                      setDragTooltip(null);
-                      dispatch({ type: "SET_SELECTED_REGION", id: region.id });
-                    }}
-                    style={{ cursor: "pointer" }}
-                  >
+                  <g key={region.id}>
                     <rect
                       x={x}
                       y={0}
@@ -905,25 +891,37 @@ export function WaveformCanvas() {
                       strokeWidth={isSelected ? 2 : 1}
                       opacity={0.6}
                     />
-                    <rect
-                      x={x}
-                      y={timelineBlockTop}
-                      width={regionWidth}
-                      height={timelineBlockHeight}
-                      rx={4}
-                      fill="var(--waveform-accent)"
-                      opacity={isSelected ? 0.9 : 0.65}
-                    />
-                    {regionWidth > 56 && (
-                      <text
-                        x={x + 6}
-                        y={timelineBlockTop + timelineBlockHeight / 2 + 3}
-                        fill="var(--foreground)"
-                        fontSize="10"
-                      >
-                        {region.name}
-                      </text>
-                    )}
+                    <g
+                      data-clip-lane-hit
+                      data-clip-id={region.id}
+                      onClick={() => {
+                        if (suppressClickRef.current) return;
+                        setSelectionRange(null);
+                        setDragTooltip(null);
+                        dispatch({ type: "SET_SELECTED_REGION", id: region.id });
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <rect
+                        x={x}
+                        y={timelineBlockTop}
+                        width={regionWidth}
+                        height={timelineBlockHeight}
+                        rx={4}
+                        fill="var(--waveform-accent)"
+                        opacity={isSelected ? 0.9 : 0.65}
+                      />
+                      {regionWidth > 56 && (
+                        <text
+                          x={x + 6}
+                          y={timelineBlockTop + timelineBlockHeight / 2 + 3}
+                          fill="var(--foreground)"
+                          fontSize="10"
+                        >
+                          {region.name}
+                        </text>
+                      )}
+                    </g>
                   </g>
                 );
               })}

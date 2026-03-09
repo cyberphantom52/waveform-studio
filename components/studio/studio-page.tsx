@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Toolbar } from "@/components/studio/toolbar";
 import { EffectChain } from "@/components/studio/effect-chain";
 import { FamilyBrowser } from "@/components/studio/family-browser";
@@ -17,8 +18,40 @@ import {
 } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { useStudioDispatch } from "@/lib/studio-context";
 
 export function StudioPage() {
+  const dispatch = useStudioDispatch();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+      if (!hasPrimaryModifier || event.key.toLowerCase() !== "z") return;
+
+      event.preventDefault();
+      if (event.shiftKey) {
+        dispatch({ type: "REDO" });
+        return;
+      }
+
+      dispatch({ type: "UNDO" });
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dispatch]);
+
   return (
     <div className="flex h-screen min-h-0 min-w-0 flex-col overflow-hidden">
       <Toolbar />

@@ -490,22 +490,23 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return { ...s, effects };
     }
     case "UPDATE_TRANSFORM_PARAMS": {
-      const effect = state.effects[state.activeEffectIndex];
-      if (!effect || !state.selectedRegionId) return state;
+      const s = pushUndo(state);
+      const effect = s.effects[s.activeEffectIndex];
+      if (!effect || !s.selectedRegionId) return s;
       const updated = recomputeRemaster(
         updateSelectedClipChain(
           effect,
-          state.selectedRegionId,
+          s.selectedRegionId,
           (chain) =>
             chain.map((step, i) =>
               i === action.index ? { ...step, params: action.params } : step,
             ),
         ),
       );
-      const effects = state.effects.map((e, i) =>
-        i === state.activeEffectIndex ? updated : e,
+      const effects = s.effects.map((e, i) =>
+        i === s.activeEffectIndex ? updated : e,
       );
-      return { ...state, effects };
+      return { ...s, effects };
     }
     case "REORDER_TRANSFORMS": {
       const s = pushUndo(state);
