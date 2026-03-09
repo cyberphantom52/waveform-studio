@@ -14,12 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createDefaultRegion, createEmptyRegionOverrides } from "@/lib/dsp/remaster";
+import { createEmptyRegionOverrides } from "@/lib/dsp/remaster";
 import {
   createStudioEffectFromRegion,
 } from "@/lib/studio-io";
 import type { Region } from "@/lib/dsp/region";
-import { Plus, Trash2, X, Waves } from "lucide-react";
+import { Trash2, X, Waves } from "lucide-react";
 
 function RegionEnvelopeEditor({
   region,
@@ -187,16 +187,7 @@ export function RegionEditor() {
 
   const sampleCount = effect.remastered?.length ?? effect.waveform.samples.length;
   const selectedRegion =
-    effect.regions.find((region) => region.id === state.selectedRegionId) ??
-    effect.regions[0] ??
-    null;
-
-  const addRegion = () => {
-    dispatch({
-      type: "ADD_REGION",
-      region: createDefaultRegion(sampleCount, effect.regions),
-    });
-  };
+    effect.regions.find((region) => region.id === state.selectedRegionId) ?? null;
 
   const bounceSelectedRegion = () => {
     if (!selectedRegion) return;
@@ -220,9 +211,6 @@ export function RegionEditor() {
             disabled={effect.regions.length === 0}
           >
             Clear
-          </Button>
-          <Button variant="ghost" size="icon-xs" onClick={addRegion}>
-            <Plus data-icon="inline-start" />
           </Button>
         </div>
       </div>

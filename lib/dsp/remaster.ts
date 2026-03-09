@@ -1,5 +1,5 @@
 import type { Region } from "./region";
-import { applyRegions } from "./region";
+import { renderTimelineRegions } from "./region";
 import type { TransformStep } from "./transforms";
 import { applyTransformChain } from "./transforms";
 import { computeStats, type WaveformStats } from "./stats";
@@ -25,11 +25,12 @@ export function createDefaultRegion(
   existingRegions: Region[],
 ): Region {
   const index = existingRegions.length + 1;
-  const start = Math.floor(sampleCount * 0.25);
-  const end = Math.floor(sampleCount * 0.75);
+  const start = 0;
+  const end = sampleCount;
   return {
     id: crypto.randomUUID(),
     name: `Clip ${index}`,
+    timelineStart: 0,
     start,
     end,
     crossfadeSamples: 0,
@@ -65,9 +66,10 @@ export function computeRemasteredWaveform(
   const sanitizedRegions = regions.map((region) =>
     sanitizeRegion(region, globalResult.length),
   );
-  const { result, clippedTotal: regionClipped } = applyRegions(
+  const { result, clippedTotal: regionClipped } = renderTimelineRegions(
     globalResult,
     sanitizedRegions,
+    sampleRate,
   );
   return {
     result,

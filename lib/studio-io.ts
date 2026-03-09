@@ -6,10 +6,16 @@ import {
   parseEffectJson,
   waveformToArrayBuffer,
 } from "@/lib/dsp/waveform";
+import { applyTransformChain } from "@/lib/dsp/transforms";
 import {
   computeRemasteredWaveform,
+  createDefaultRegion,
   createEmptyRegionOverrides,
 } from "@/lib/dsp/remaster";
+import {
+  buildTimelineSamples,
+  renderTimelineRegions,
+} from "@/lib/dsp/region";
 import type { FamilyPreset, StudioEffect, StudioState } from "@/lib/studio-context";
 import type { Region } from "@/lib/dsp/region";
 
@@ -24,7 +30,7 @@ export function createStudioEffect(
       samples: cloneSamples(waveform.samples),
     },
     chain: [],
-    regions: [],
+    regions: [createDefaultRegion(waveform.samples.length, [])],
     remastered: null,
     metadata,
     familyTag: metadata?.family ?? "ungrouped",
@@ -116,9 +122,31 @@ export function getRenderedWaveformSamples(effect: StudioEffect) {
   ).result;
 }
 
+export function getTimelineOriginalSamples(effect: StudioEffect) {
+  return buildTimelineSamples(effect.waveform.samples, effect.regions);
+}
+
+export function getRenderedRegionSamples(effect: StudioEffect, region: Region) {
+  const { result: globalResult } = applyTransformChain(
+    effect.waveform.samples,
+    effect.chain,
+    effect.waveform.sampleRate,
+  );
+
+  const normalizedRegion = {
+    ...region,
+    timelineStart: 0,
+  };
+
+  return renderTimelineRegions(
+    globalResult,
+    [normalizedRegion],
+    effect.waveform.sampleRate,
+  ).result;
+}
+
 export function createStudioEffectFromRegion(effect: StudioEffect, region: Region) {
-  const rendered = getRenderedWaveformSamples(effect);
-  const clipSamples = rendered.slice(region.start, region.end);
+  const clipSamples = getRenderedRegionSamples(effect, region);
   const waveformName = buildRegionWaveformName(effect, region);
   const bounced = createStudioEffect(
     {
@@ -170,9 +198,8 @@ export function createStudioEffectFromSelection(
 }
 
 export function downloadRegionWaveformBin(effect: StudioEffect, region: Region) {
-  const rendered = getRenderedWaveformSamples(effect);
   const filename = `${buildRegionWaveformName(effect, region)}.bin`;
-  downloadWaveformBin(filename, rendered.slice(region.start, region.end));
+  downloadWaveformBin(filename, getRenderedRegionSamples(effect, region));
 }
 
 async function sha256Hex(data: Int8Array): Promise<string> {
@@ -252,6 +279,7 @@ export function createRegionSelection(
   return {
     id: crypto.randomUUID(),
     name: `Clip ${existingRegions.length + 1}`,
+    timelineStart: safeStart,
     start: safeStart,
     end: safeEnd,
     crossfadeSamples: 0,

@@ -3,9 +3,10 @@
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import { computeDelta } from "@/lib/dsp/stats";
 import {
-  createRegionSelection,
-  createStudioEffectFromSelection,
+  createStudioEffectFromRegion,
+  getTimelineOriginalSamples,
 } from "@/lib/studio-io";
+import { getRegionLength, splitTimelineRegionsAtSelection, type Region } from "@/lib/dsp/region";
 import { clampZoomWindow, scaleZoomWindow } from "@/lib/zoom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Slider } from "@/components/ui/slider";
@@ -46,12 +47,31 @@ export function WaveformCanvas() {
   const scrollbarRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
   const panStateRef = useRef<{ startClientX: number; startZoomStart: number } | null>(null);
+  const clipDragRef = useRef<
+    | {
+        region: Region;
+        startClientX: number;
+        minStart: number;
+        maxStart: number;
+      }
+    | null
+  >(null);
+  const selectionEditRef = useRef<
+    | {
+        mode: "move" | "resize-start" | "resize-end";
+        startClientX: number;
+        selection: { start: number; end: number };
+      }
+    | null
+  >(null);
   const selectionStateRef = useRef<{ startX: number; currentX: number } | null>(null);
   const suppressClickRef = useRef(false);
   const [width, setWidth] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [draggedClipStart, setDraggedClipStart] = useState<number | null>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
+  const [dragTooltip, setDragTooltip] = useState<{ x: number; y: number } | null>(null);
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragCurrentX, setDragCurrentX] = useState<number | null>(null);
   const effect = state.effects[state.activeEffectIndex];
@@ -72,7 +92,9 @@ export function WaveformCanvas() {
     return () => observer.disconnect();
   }, []);
 
-  const original = effect?.waveform.samples ?? new Int8Array();
+  const selectedClip =
+    effect?.regions.find((region) => region.id === state.selectedRegionId) ?? null;
+  const original = effect ? getTimelineOriginalSamples(effect) : new Int8Array();
   const remastered = effect?.remastered ?? original;
   const baseLength = Math.max(original.length, remastered.length, 1);
   const minZoomRange = 1 / baseLength;
@@ -105,6 +127,7 @@ export function WaveformCanvas() {
   const timelineTop = innerHeight + axisHeight;
   const timelineBlockTop = timelineTop + 4;
   const timelineBlockHeight = Math.max(8, timelineHeight - 8);
+  const selectionHandleWidth = 10;
   const scrollContentWidth =
     width > 0 ? Math.max(width + 1, Math.round(width / zoomRange)) : 0;
   const maxScrollLeft = Math.max(0, scrollContentWidth - width);
@@ -153,52 +176,96 @@ export function WaveformCanvas() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
-        !effect ||
-        !selectionRange ||
-        (target &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.tagName === "SELECT" ||
-            target.isContentEditable))
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
       ) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        if (!selectionRange) return;
+        event.preventDefault();
+        setSelectionRange(null);
+        dispatch({ type: "SET_SELECTED_REGION", id: null });
+        return;
+      }
+
+      if (!effect) return;
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (!selectedClip) return;
+        event.preventDefault();
+        dispatch({ type: "REMOVE_REGION", id: selectedClip.id });
+        return;
+      }
+
+      if (!selectionRange) {
+        if ((event.key === "n" || event.key === "N") && selectedClip) {
+          event.preventDefault();
+          dispatch({
+            type: "ADD_EFFECT",
+            effect: createStudioEffectFromRegion(effect, selectedClip),
+          });
+        }
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        const delta = event.key === "ArrowLeft" ? -step : step;
+        const length = selectionRange.end - selectionRange.start;
+        const maxStart = Math.max(0, baseLength - length);
+        const nextStart = Math.max(
+          0,
+          Math.min(selectionRange.start + delta, maxStart),
+        );
+        setSelectionRange({ start: nextStart, end: nextStart + length });
+        dispatch({ type: "SET_SELECTED_REGION", id: null });
         return;
       }
 
       if (event.key === "c" || event.key === "C") {
         event.preventDefault();
+        const nextTimeline = splitTimelineRegionsAtSelection(
+          effect.regions,
+          selectionRange.start,
+          selectionRange.end,
+          effect.waveform.samples.length,
+        );
+        dispatch({ type: "SET_REGIONS", regions: nextTimeline.regions });
         dispatch({
-          type: "ADD_REGION",
-          region: createRegionSelection(
-            selectionRange.start,
-            selectionRange.end,
-            effect.regions,
-          ),
+          type: "SET_SELECTED_REGION",
+          id: nextTimeline.selectedIds[0] ?? null,
         });
+        setSelectionRange(null);
+        setDragTooltip(null);
         return;
       }
 
       if (event.key === "n" || event.key === "N") {
+        if (!selectedClip) return;
         event.preventDefault();
         dispatch({
           type: "ADD_EFFECT",
-          effect: createStudioEffectFromSelection(
-            effect,
-            selectionRange.start,
-            selectionRange.end,
-            `selection_${selectionRange.start}_${selectionRange.end}`,
-          ),
+          effect: createStudioEffectFromRegion(effect, selectedClip),
         });
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dispatch, effect, selectionRange]);
+  }, [baseLength, dispatch, effect, selectedClip, selectionRange]);
 
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
+      setDraggedClipStart(null);
       setSelectionRange(null);
+      setDragTooltip(null);
       setDragStartX(null);
       setDragCurrentX(null);
       setIsSelecting(false);
@@ -230,6 +297,19 @@ export function WaveformCanvas() {
   const xForSample = (sample: number) => {
     const span = Math.max(1, endSample - startSample);
     return ((sample - startSample) / span) * innerWidth;
+  };
+
+  const selectionFromBounds = (bounds: { left: number; right: number } | null) => {
+    if (!bounds) return null;
+    const left = Math.max(0, bounds.left);
+    const right = Math.min(innerWidth, bounds.right);
+    if (right - left < 4) return null;
+    const span = Math.max(1, endSample - startSample);
+    const start =
+      startSample + Math.floor((left / Math.max(1, innerWidth)) * span);
+    const end =
+      startSample + Math.ceil((right / Math.max(1, innerWidth)) * span);
+    return { start, end: Math.max(start + 1, end) };
   };
 
   const yForValue = (value: number, minValue: number, maxValue: number) => {
@@ -275,6 +355,32 @@ export function WaveformCanvas() {
     [visibleDiff, innerWidth, innerHeight, state.canvasConfig.density],
   );
 
+  const timelineRegions = useMemo(() => {
+    if (!effect) return [] as Array<{
+      region: (typeof effect.regions)[number];
+      timelineStart: number;
+      timelineEnd: number;
+    }>;
+
+    return effect.regions
+      .map((region) => {
+        const timelineStart =
+          draggedClipStart !== null && selectedClip?.id === region.id
+            ? draggedClipStart
+            : region.timelineStart;
+        const timelineEnd = timelineStart + getRegionLength(region);
+        return { region, timelineStart, timelineEnd };
+      })
+      .sort((left, right) => left.timelineStart - right.timelineStart);
+  }, [draggedClipStart, effect, selectedClip?.id]);
+
+  const totalTimelineLength = timelineRegions.reduce(
+    (max, region) => Math.max(max, region.timelineEnd),
+    0,
+  );
+  const selectedClipEntry =
+    timelineRegions.find((region) => region.region.id === state.selectedRegionId) ?? null;
+
   const activeSelectionBounds =
     dragStartX !== null && dragCurrentX !== null
       ? {
@@ -291,41 +397,129 @@ export function WaveformCanvas() {
         }
       : null;
 
+  const activeSelectionRange = selectionFromBounds(activeSelectionBounds);
+  const displayedSelectionRange = activeSelectionRange ?? selectionRange;
+
+  const selectionSampleCount = displayedSelectionRange
+    ? displayedSelectionRange.end - displayedSelectionRange.start
+    : 0;
+  const selectionDurationMs =
+    effect && displayedSelectionRange
+      ? (selectionSampleCount / effect.waveform.sampleRate) * 1000
+      : 0;
+
+  const formatDurationMs = (durationMs: number) => {
+    if (durationMs >= 100) return `${durationMs.toFixed(0)} ms`;
+    if (durationMs >= 10) return `${durationMs.toFixed(1)} ms`;
+    return `${durationMs.toFixed(2)} ms`;
+  };
+
   const selectionBounds = activeSelectionBounds ?? committedSelectionBounds;
 
   const commitSelectionFromBounds = (bounds: { left: number; right: number } | null) => {
-    if (!bounds) return null;
-    const left = Math.max(0, bounds.left);
-    const right = Math.min(innerWidth, bounds.right);
-    if (right - left < 4) {
+    const nextSelection = selectionFromBounds(bounds);
+    if (!nextSelection) {
       setSelectionRange(null);
       dispatch({ type: "SET_SELECTED_REGION", id: null });
       return null;
     }
-    const span = Math.max(1, endSample - startSample);
-    const start =
-      startSample + Math.floor((left / Math.max(1, innerWidth)) * span);
-    const end =
-      startSample + Math.ceil((right / Math.max(1, innerWidth)) * span);
-    const nextSelection = { start, end: Math.max(start + 1, end) };
     dispatch({ type: "SET_SELECTED_REGION", id: null });
     setSelectionRange(nextSelection);
     return nextSelection;
   };
 
+  const clampSelection = (start: number, end: number) => {
+    const clampedStart = Math.max(0, Math.min(start, baseLength - 1));
+    const clampedEnd = Math.max(clampedStart + 1, Math.min(end, baseLength));
+    return { start: clampedStart, end: clampedEnd };
+  };
+
+  const updateDragTooltip = (event: React.PointerEvent<SVGSVGElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setDragTooltip({
+      x: Math.max(8, Math.min(width - 8, event.clientX - bounds.left + 14)),
+      y: Math.max(8, event.clientY - bounds.top - 14),
+    });
+  };
+
   const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (innerWidth <= 0) return;
 
+    const svgBounds = event.currentTarget.getBoundingClientRect();
+    const relativeX = Math.min(
+      Math.max(event.clientX - svgBounds.left - margin.left, 0),
+      innerWidth,
+    );
+    const relativeY = event.clientY - svgBounds.top - margin.top;
+
     const target = event.target as Element | null;
-    if (event.button === 0 && target?.closest("[data-clip-id]")) {
+    const selectionHandle = target?.closest("[data-selection-handle]");
+    const selectionBody = target?.closest("[data-selection-body]");
+    const clipTarget = target?.closest("[data-clip-id]");
+
+    if (event.button === 0 && selectionRange && selectionHandle) {
+      const mode = selectionHandle.getAttribute("data-selection-handle");
+      if (mode === "start" || mode === "end") {
+        selectionEditRef.current = {
+          mode: mode === "start" ? "resize-start" : "resize-end",
+          startClientX: event.clientX,
+          selection: selectionRange,
+        };
+        suppressClickRef.current = false;
+        dispatch({ type: "SET_SELECTED_REGION", id: null });
+        updateDragTooltip(event);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (event.button === 0 && selectionRange && selectionBody) {
+      selectionEditRef.current = {
+        mode: "move",
+        startClientX: event.clientX,
+        selection: selectionRange,
+      };
+      suppressClickRef.current = false;
+      dispatch({ type: "SET_SELECTED_REGION", id: null });
+      updateDragTooltip(event);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
       return;
     }
 
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const relativeX = Math.min(
-      Math.max(event.clientX - bounds.left - margin.left, 0),
-      innerWidth,
-    );
+    if (
+      event.button === 0 &&
+      clipTarget &&
+      selectedClipEntry &&
+      clipTarget.getAttribute("data-clip-id") === selectedClipEntry.region.id
+    ) {
+      const index = timelineRegions.findIndex(
+        (timelineRegion) => timelineRegion.region.id === selectedClipEntry.region.id,
+      );
+      const previousRegion = index > 0 ? timelineRegions[index - 1] : null;
+      const nextRegion =
+        index >= 0 && index < timelineRegions.length - 1
+          ? timelineRegions[index + 1]
+          : null;
+      const clipLength = getRegionLength(selectedClipEntry.region);
+
+      clipDragRef.current = {
+        region: selectedClipEntry.region,
+        startClientX: event.clientX,
+        minStart: previousRegion ? previousRegion.timelineEnd : 0,
+        maxStart: nextRegion
+          ? nextRegion.timelineStart - clipLength
+          : totalTimelineLength + clipLength,
+      };
+      setDraggedClipStart(selectedClipEntry.timelineStart);
+      suppressClickRef.current = false;
+      setSelectionRange(null);
+      setDragTooltip(null);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
 
     if (event.button === 2) {
       if (zoomRange >= 1) return;
@@ -342,11 +536,16 @@ export function WaveformCanvas() {
 
     if (event.button !== 0) return;
 
+    if (relativeY < 0 || relativeY > innerHeight) {
+      return;
+    }
+
     selectionStateRef.current = { startX: relativeX, currentX: relativeX };
     setDragStartX(relativeX);
     setDragCurrentX(relativeX);
     setIsSelecting(true);
     suppressClickRef.current = false;
+    updateDragTooltip(event);
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
@@ -371,6 +570,71 @@ export function WaveformCanvas() {
       return;
     }
 
+    const clipDrag = clipDragRef.current;
+    if (clipDrag) {
+      const visibleSpan = Math.max(1, endSample - startSample);
+      const deltaX = event.clientX - clipDrag.startClientX;
+      const deltaSamples = Math.round(
+        (deltaX / Math.max(1, innerWidth)) * visibleSpan,
+      );
+
+      if (Math.abs(deltaX) > 3) {
+        suppressClickRef.current = true;
+      }
+
+      const nextStart = Math.max(
+        clipDrag.minStart,
+        Math.min(clipDrag.region.timelineStart + deltaSamples, clipDrag.maxStart),
+      );
+      setDraggedClipStart(nextStart);
+      return;
+    }
+
+    const selectionEdit = selectionEditRef.current;
+    if (selectionEdit) {
+      const visibleSpan = Math.max(1, endSample - startSample);
+      const deltaX = event.clientX - selectionEdit.startClientX;
+      const deltaSamples = Math.round(
+        (deltaX / Math.max(1, innerWidth)) * visibleSpan,
+      );
+
+      if (Math.abs(deltaX) > 3) {
+        suppressClickRef.current = true;
+      }
+
+      if (selectionEdit.mode === "move") {
+        const length = selectionEdit.selection.end - selectionEdit.selection.start;
+        const maxStart = Math.max(0, baseLength - length);
+        const nextStart = Math.max(
+          0,
+          Math.min(selectionEdit.selection.start + deltaSamples, maxStart),
+        );
+        setSelectionRange({ start: nextStart, end: nextStart + length });
+        updateDragTooltip(event);
+        return;
+      }
+
+      if (selectionEdit.mode === "resize-start") {
+        setSelectionRange(
+          clampSelection(
+            selectionEdit.selection.start + deltaSamples,
+            selectionEdit.selection.end,
+          ),
+        );
+        updateDragTooltip(event);
+        return;
+      }
+
+      setSelectionRange(
+        clampSelection(
+          selectionEdit.selection.start,
+          selectionEdit.selection.end + deltaSamples,
+        ),
+      );
+      updateDragTooltip(event);
+      return;
+    }
+
     if (!selectionStateRef.current) return;
 
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -386,12 +650,34 @@ export function WaveformCanvas() {
       currentX: relativeX,
     };
     setDragCurrentX(relativeX);
+    updateDragTooltip(event);
   };
 
   const handlePointerEnd = (event: React.PointerEvent<SVGSVGElement>) => {
     if (panStateRef.current) {
       panStateRef.current = null;
       setIsPanning(false);
+    }
+
+    if (selectionEditRef.current) {
+      selectionEditRef.current = null;
+    }
+
+    if (clipDragRef.current) {
+      if (
+        draggedClipStart !== null &&
+        draggedClipStart !== clipDragRef.current.region.timelineStart
+      ) {
+        dispatch({
+          type: "UPDATE_REGION",
+          region: {
+            ...clipDragRef.current.region,
+            timelineStart: draggedClipStart,
+          },
+        });
+      }
+      clipDragRef.current = null;
+      setDraggedClipStart(null);
     }
 
     if (selectionStateRef.current) {
@@ -410,6 +696,8 @@ export function WaveformCanvas() {
       setDragCurrentX(null);
       setIsSelecting(false);
     }
+
+    setDragTooltip(null);
 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -472,7 +760,9 @@ export function WaveformCanvas() {
           </ToggleGroupItem>
         </ToggleGroup>
         <span className="text-[10px] text-muted-foreground">
-          Left-drag select · Right-drag pan · `C` clip · `N` waveform
+          {selectionRange
+            ? `Selection ${selectionRange.start}–${selectionRange.end} · ${selectionSampleCount} smp · ${formatDurationMs(selectionDurationMs)}`
+            : "Left-drag select · Right-drag pan · C split · Click clip to select · N waveform · Del delete clip"}
         </span>
         <div className="ml-auto flex min-w-48 items-center gap-2">
           <ScanSearch className="size-3.5 text-muted-foreground" />
@@ -570,9 +860,9 @@ export function WaveformCanvas() {
                 opacity={0.35}
               />
 
-              {effect.regions.map((region) => {
-                const regionStart = Math.max(startSample, region.start);
-                const regionEnd = Math.min(endSample, region.end);
+              {timelineRegions.map(({ region, timelineStart, timelineEnd }) => {
+                const regionStart = Math.max(startSample, timelineStart);
+                const regionEnd = Math.min(endSample, timelineEnd);
                 if (regionEnd <= regionStart) return null;
                 const x = xForSample(regionStart);
                 const regionWidth = Math.max(1, xForSample(regionEnd) - x);
@@ -583,7 +873,8 @@ export function WaveformCanvas() {
                     data-clip-id={region.id}
                     onClick={() => {
                       if (suppressClickRef.current) return;
-                      setSelectionRange({ start: region.start, end: region.end });
+                      setSelectionRange(null);
+                      setDragTooltip(null);
                       dispatch({ type: "SET_SELECTED_REGION", id: region.id });
                     }}
                     style={{ cursor: "pointer" }}
@@ -692,6 +983,54 @@ export function WaveformCanvas() {
                 />
               )}
 
+              {selectionBounds && (
+                <>
+                  <rect
+                    data-selection-body
+                    x={selectionBounds.left}
+                    y={timelineBlockTop}
+                    width={selectionBounds.right - selectionBounds.left}
+                    height={timelineBlockHeight}
+                    fill="transparent"
+                    style={{ cursor: "grab" }}
+                  />
+                  <rect
+                    data-selection-handle="start"
+                    x={selectionBounds.left - selectionHandleWidth / 2}
+                    y={timelineBlockTop - 2}
+                    width={selectionHandleWidth}
+                    height={timelineBlockHeight + 4}
+                    fill="transparent"
+                    style={{ cursor: "ew-resize" }}
+                  />
+                  <rect
+                    data-selection-handle="end"
+                    x={selectionBounds.right - selectionHandleWidth / 2}
+                    y={timelineBlockTop - 2}
+                    width={selectionHandleWidth}
+                    height={timelineBlockHeight + 4}
+                    fill="transparent"
+                    style={{ cursor: "ew-resize" }}
+                  />
+                  <line
+                    x1={selectionBounds.left}
+                    x2={selectionBounds.left}
+                    y1={timelineBlockTop - 2}
+                    y2={timelineBlockTop + timelineBlockHeight + 2}
+                    stroke="var(--waveform-accent)"
+                    strokeWidth={2}
+                  />
+                  <line
+                    x1={selectionBounds.right}
+                    x2={selectionBounds.right}
+                    y1={timelineBlockTop - 2}
+                    y2={timelineBlockTop + timelineBlockHeight + 2}
+                    stroke="var(--waveform-accent)"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
+
               <line
                 x1={0}
                 x2={innerWidth}
@@ -741,6 +1080,19 @@ export function WaveformCanvas() {
               })}
             </g>
           </svg>
+        )}
+
+        {dragTooltip && displayedSelectionRange && (
+          <div
+            className="pointer-events-none absolute z-10 rounded-md border border-border bg-card/95 px-2 py-1 text-[10px] shadow-sm"
+            style={{
+              left: dragTooltip.x,
+              top: dragTooltip.y,
+              transform: "translate(-50%, -100%)",
+            }}
+          >
+            {displayedSelectionRange.start}–{displayedSelectionRange.end} · {selectionSampleCount} smp · {formatDurationMs(selectionDurationMs)}
+          </div>
         )}
       </div>
 

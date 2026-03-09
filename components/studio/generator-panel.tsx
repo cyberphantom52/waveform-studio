@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
+import { createStudioEffect } from "@/lib/studio-io";
 import {
   generateWaveform,
   defaultGeneratorParams,
@@ -47,20 +48,16 @@ export function GeneratorPanel() {
     dispatch({
       type: "ADD_EFFECT",
       effect: {
-        waveform: {
-          id: crypto.randomUUID(),
-          name: `gen_${params.shape}_${params.frequency}Hz`,
-          samples,
-          sampleRate: params.sampleRate,
-        },
-        chain: [],
-        regions: [],
-        remastered: null,
+        ...createStudioEffect(
+          {
+            id: crypto.randomUUID(),
+            name: `gen_${params.shape}_${params.frequency}Hz`,
+            samples,
+            sampleRate: params.sampleRate,
+          },
+          state.globalDefaultPlayRateHz,
+        ),
         familyTag: "generated",
-        playRateHz: state.globalDefaultPlayRateHz,
-        notes: "",
-        selected: false,
-        remasterInfo: null,
       },
     });
     setOpen(false);

@@ -7,6 +7,7 @@ import {
 export interface Region {
   id: string;
   name: string;
+  timelineStart: number;
   start: number;
   end: number;
   crossfadeSamples: number;
@@ -123,6 +124,164 @@ export function upsertTimelineRegion(
   return nextRegions.sort((left, right) => left.start - right.start);
 }
 
+export function getRegionLength(region: Region) {
+  return Math.max(0, region.end - region.start);
+}
+
+export function getTimelineLength(regions: Region[], fallbackLength: number) {
+  if (regions.length === 0) return fallbackLength;
+  return regions.reduce(
+    (max, region) => Math.max(max, region.timelineStart + getRegionLength(region)),
+    0,
+  );
+}
+
+function cloneRegion(region: Region): Region {
+  return {
+    ...region,
+    overrides: cloneRegionOverrides(region),
+  };
+}
+
+function createTimelineRegion(
+  timelineStart: number,
+  start: number,
+  end: number,
+  name: string,
+  region?: Region,
+): Region {
+  if (region) {
+    return {
+      ...region,
+      id: crypto.randomUUID(),
+      name,
+      timelineStart,
+      start,
+      end,
+      crossfadeSamples: 0,
+      overrides: cloneRegionOverrides(region),
+    };
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    name,
+    timelineStart,
+    start,
+    end,
+    crossfadeSamples: 0,
+    overrides: {
+      gain: null,
+      smoothing: null,
+      deadzone: null,
+      envelope: null,
+    },
+  };
+}
+
+export function buildTimelineSamples(samples: Int8Array, regions: Region[]) {
+  if (regions.length === 0) return new Int8Array(samples);
+
+  const result = new Int8Array(getTimelineLength(regions, samples.length));
+  for (const region of regions) {
+    const safeStart = Math.max(0, Math.min(region.start, samples.length));
+    const safeEnd = Math.max(safeStart, Math.min(region.end, samples.length));
+    if (safeEnd <= safeStart) continue;
+    result.set(samples.slice(safeStart, safeEnd), region.timelineStart);
+  }
+
+  return result;
+}
+
+export function splitTimelineRegionsAtSelection(
+  regions: Region[],
+  selectionStart: number,
+  selectionEnd: number,
+  sampleCount: number,
+) {
+  if (sampleCount <= 0) return { regions: [], selectedIds: [] as string[] };
+
+  const baseRegions =
+    regions.length > 0
+      ? regions.map(cloneRegion)
+      : [createTimelineRegion(0, 0, sampleCount, "Clip 1")];
+  const totalLength = getTimelineLength(baseRegions, sampleCount);
+  const safeStart = Math.max(0, Math.min(selectionStart, totalLength - 1));
+  const safeEnd = Math.max(safeStart + 1, Math.min(selectionEnd, totalLength));
+
+  const nextRegions: Region[] = [];
+  const selectedIds: string[] = [];
+  let clipIndex = baseRegions.length;
+  const nextName = () => {
+    clipIndex += 1;
+    return `Clip ${clipIndex}`;
+  };
+
+  for (const region of baseRegions) {
+    const length = getRegionLength(region);
+    const timelineStart = region.timelineStart;
+    const timelineEnd = timelineStart + length;
+
+    if (safeEnd <= timelineStart || safeStart >= timelineEnd) {
+      nextRegions.push(region);
+      continue;
+    }
+
+    const localStart = Math.max(0, safeStart - timelineStart);
+    const localEnd = Math.min(length, safeEnd - timelineStart);
+    const sourceStart = region.start + localStart;
+    const sourceEnd = region.start + localEnd;
+
+    if (localStart > 0) {
+      nextRegions.push(
+        createTimelineRegion(
+          timelineStart,
+          region.start,
+          sourceStart,
+          region.name,
+          region,
+        ),
+      );
+    }
+
+    if (sourceEnd > sourceStart) {
+      const selectedRegion =
+        localStart === 0 && localEnd === length
+          ? region
+          : createTimelineRegion(
+              timelineStart + localStart,
+              sourceStart,
+              sourceEnd,
+              nextName(),
+              region,
+            );
+      nextRegions.push(selectedRegion);
+      selectedIds.push(selectedRegion.id);
+    }
+
+    if (localEnd < length) {
+      nextRegions.push(
+        createTimelineRegion(
+          timelineStart + localEnd,
+          sourceEnd,
+          region.end,
+          region.name,
+          region,
+        ),
+      );
+    }
+  }
+
+  const normalizedRegions = nextRegions
+    .sort((left, right) => left.timelineStart - right.timelineStart)
+    .map((region, index) => ({
+      ...region,
+      name: `Clip ${index + 1}`,
+    }));
+
+  return { regions: normalizedRegions, selectedIds };
+}
+
 function buildRegionChain(region: Region): TransformStep[] {
   const steps: TransformStep[] = [];
   if (region.overrides.gain) {
@@ -217,4 +376,40 @@ export function applyRegions(
   }
 
   return { result, clippedTotal };
+}
+
+export function renderTimelineRegions(
+  samples: Int8Array,
+  regions: Region[],
+  sampleRate: number,
+): RegionApplyResult {
+  if (regions.length === 0) {
+    return { result: new Int8Array(samples), clippedTotal: 0 };
+  }
+
+  const rendered = new Int8Array(getTimelineLength(regions, samples.length));
+  let clippedTotal = 0;
+
+  for (const region of regions) {
+    const safeStart = Math.max(0, Math.min(region.start, samples.length));
+    const safeEnd = Math.max(safeStart, Math.min(region.end, samples.length));
+    if (safeEnd <= safeStart) continue;
+
+    const source = samples.slice(safeStart, safeEnd);
+    const chain = buildRegionChain(region);
+    if (chain.length === 0) {
+      rendered.set(source, region.timelineStart);
+      continue;
+    }
+
+    const { result, clippedTotal: clipClipped } = applyTransformChain(
+      source,
+      chain,
+      sampleRate,
+    );
+    rendered.set(result, region.timelineStart);
+    clippedTotal += clipClipped;
+  }
+
+  return { result: rendered, clippedTotal };
 }
