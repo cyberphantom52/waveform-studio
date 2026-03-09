@@ -15,6 +15,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createDefaultRegion, createEmptyRegionOverrides } from "@/lib/dsp/remaster";
+import {
+  createStudioEffectFromRegion,
+} from "@/lib/studio-io";
 import type { Region } from "@/lib/dsp/region";
 import { Plus, Trash2, X, Waves } from "lucide-react";
 
@@ -195,11 +198,19 @@ export function RegionEditor() {
     });
   };
 
+  const bounceSelectedRegion = () => {
+    if (!selectedRegion) return;
+    dispatch({
+      type: "ADD_EFFECT",
+      effect: createStudioEffectFromRegion(effect, selectedRegion),
+    });
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-1 border-b border-border px-2 py-1">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          Regions
+          Clips
         </span>
         <div className="flex items-center gap-1">
           <Button
@@ -221,7 +232,7 @@ export function RegionEditor() {
           <div className="flex h-28 flex-col items-center justify-center gap-2 px-4 text-center">
             <Waves className="size-4 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">
-              No regions yet. Drag on the waveform in region mode or add one here.
+              No clips yet. Left-drag to make a selection, then press `C` to turn it into a clip.
             </p>
           </div>
         ) : (
@@ -274,11 +285,23 @@ export function RegionEditor() {
                       })
                     }
                     className="h-8"
-                    placeholder="Region name"
+                    placeholder="Clip name"
                   />
+                  <Badge variant="outline" className="text-[10px]">
+                    {selectedRegion.end - selectedRegion.start} smp
+                  </Badge>
                   <Badge variant="secondary" className="text-[10px]">
                     {selectedRegion.id.slice(0, 8)}
                   </Badge>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="xs" onClick={bounceSelectedRegion}>
+                    Create Waveform
+                  </Button>
+                  <span className="text-[10px] text-muted-foreground">
+                    Or select on the canvas and press `N`
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2">

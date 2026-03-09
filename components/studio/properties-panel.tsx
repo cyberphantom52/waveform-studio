@@ -282,7 +282,7 @@ export function PropertiesPanel() {
               <Separator className="my-1" />
               <div className="px-2">
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Regions ({effect.regions.length})
+                  Clips ({effect.regions.length})
                 </span>
               </div>
               {effect.regions.map((r) => (

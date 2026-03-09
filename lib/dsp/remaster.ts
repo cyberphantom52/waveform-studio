@@ -29,10 +29,10 @@ export function createDefaultRegion(
   const end = Math.floor(sampleCount * 0.75);
   return {
     id: crypto.randomUUID(),
-    name: `Region ${index}`,
+    name: `Clip ${index}`,
     start,
     end,
-    crossfadeSamples: 20,
+    crossfadeSamples: 0,
     overrides: createEmptyRegionOverrides(),
   };
 }

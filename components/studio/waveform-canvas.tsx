@@ -2,12 +2,14 @@
 
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import { computeDelta } from "@/lib/dsp/stats";
-import { createRegionSelection } from "@/lib/studio-io";
+import {
+  createRegionSelection,
+  createStudioEffectFromSelection,
+} from "@/lib/studio-io";
 import { clampZoomWindow, scaleZoomWindow } from "@/lib/zoom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ScanSearch, SquarePen } from "lucide-react";
+import { ScanSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 function pathFromSamples(
@@ -44,10 +46,12 @@ export function WaveformCanvas() {
   const scrollbarRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
   const panStateRef = useRef<{ startClientX: number; startZoomStart: number } | null>(null);
+  const selectionStateRef = useRef<{ startX: number; currentX: number } | null>(null);
   const suppressClickRef = useRef(false);
   const [width, setWidth] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
-  const [regionSelectMode, setRegionSelectMode] = useState(false);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragCurrentX, setDragCurrentX] = useState<number | null>(null);
   const effect = state.effects[state.activeEffectIndex];
@@ -88,9 +92,19 @@ export function WaveformCanvas() {
   );
   const visibleDiff = computeDelta(visibleOriginal, visibleRemastered);
 
-  const margin = { top: 12, right: 8, bottom: 26, left: 42 };
+  const axisHeight = 26;
+  const timelineHeight = 24;
+  const margin = {
+    top: 12,
+    right: 8,
+    bottom: axisHeight + timelineHeight + 8,
+    left: 42,
+  };
   const innerWidth = Math.max(0, width - margin.left - margin.right);
   const innerHeight = Math.max(0, canvasHeight - margin.top - margin.bottom);
+  const timelineTop = innerHeight + axisHeight;
+  const timelineBlockTop = timelineTop + 4;
+  const timelineBlockHeight = Math.max(8, timelineHeight - 8);
   const scrollContentWidth =
     width > 0 ? Math.max(width + 1, Math.round(width / zoomRange)) : 0;
   const maxScrollLeft = Math.max(0, scrollContentWidth - width);
@@ -133,6 +147,66 @@ export function WaveformCanvas() {
     element.addEventListener("wheel", handleWheel, { passive: false });
     return () => element.removeEventListener("wheel", handleWheel);
   }, [dispatch, effect, innerWidth, margin.left, minZoomRange, state.zoom, zoomRange]);
+
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        !effect ||
+        !selectionRange ||
+        (target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable))
+      ) {
+        return;
+      }
+
+      if (event.key === "c" || event.key === "C") {
+        event.preventDefault();
+        dispatch({
+          type: "ADD_REGION",
+          region: createRegionSelection(
+            selectionRange.start,
+            selectionRange.end,
+            effect.regions,
+          ),
+        });
+        return;
+      }
+
+      if (event.key === "n" || event.key === "N") {
+        event.preventDefault();
+        dispatch({
+          type: "ADD_EFFECT",
+          effect: createStudioEffectFromSelection(
+            effect,
+            selectionRange.start,
+            selectionRange.end,
+            `selection_${selectionRange.start}_${selectionRange.end}`,
+          ),
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dispatch, effect, selectionRange]);
+
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setSelectionRange(null);
+      setDragStartX(null);
+      setDragCurrentX(null);
+      setIsSelecting(false);
+      selectionStateRef.current = null;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [effect?.waveform.id]);
 
   useEffect(() => {
     const element = scrollbarRef.current;
@@ -201,7 +275,7 @@ export function WaveformCanvas() {
     [visibleDiff, innerWidth, innerHeight, state.canvasConfig.density],
   );
 
-  const selectionBounds =
+  const activeSelectionBounds =
     dragStartX !== null && dragCurrentX !== null
       ? {
           left: Math.min(dragStartX, dragCurrentX),
@@ -209,69 +283,134 @@ export function WaveformCanvas() {
         }
       : null;
 
-  const createSelectionFromDrag = () => {
-    if (!effect || !selectionBounds) return;
-    const left = Math.max(0, selectionBounds.left);
-    const right = Math.min(innerWidth, selectionBounds.right);
-    if (right - left < 4) return;
+  const committedSelectionBounds =
+    selectionRange !== null
+      ? {
+          left: xForSample(selectionRange.start),
+          right: xForSample(selectionRange.end),
+        }
+      : null;
+
+  const selectionBounds = activeSelectionBounds ?? committedSelectionBounds;
+
+  const commitSelectionFromBounds = (bounds: { left: number; right: number } | null) => {
+    if (!bounds) return null;
+    const left = Math.max(0, bounds.left);
+    const right = Math.min(innerWidth, bounds.right);
+    if (right - left < 4) {
+      setSelectionRange(null);
+      dispatch({ type: "SET_SELECTED_REGION", id: null });
+      return null;
+    }
     const span = Math.max(1, endSample - startSample);
-    const selectionStart =
+    const start =
       startSample + Math.floor((left / Math.max(1, innerWidth)) * span);
-    const selectionEnd =
+    const end =
       startSample + Math.ceil((right / Math.max(1, innerWidth)) * span);
-    dispatch({
-      type: "ADD_REGION",
-      region: createRegionSelection(
-        selectionStart,
-        selectionEnd,
-        effect.regions,
-      ),
-    });
+    const nextSelection = { start, end: Math.max(start + 1, end) };
+    dispatch({ type: "SET_SELECTED_REGION", id: null });
+    setSelectionRange(nextSelection);
+    return nextSelection;
   };
 
-  const handlePanStart = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (
-      regionSelectMode ||
-      zoomRange >= 1 ||
-      event.button !== 0 ||
-      innerWidth <= 0
-    ) {
+  const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (innerWidth <= 0) return;
+
+    const target = event.target as Element | null;
+    if (event.button === 0 && target?.closest("[data-clip-id]")) {
       return;
     }
 
-    panStateRef.current = {
-      startClientX: event.clientX,
-      startZoomStart: state.zoom.start,
-    };
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeX = Math.min(
+      Math.max(event.clientX - bounds.left - margin.left, 0),
+      innerWidth,
+    );
+
+    if (event.button === 2) {
+      if (zoomRange >= 1) return;
+      panStateRef.current = {
+        startClientX: event.clientX,
+        startZoomStart: state.zoom.start,
+      };
+      suppressClickRef.current = false;
+      setIsPanning(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
+    if (event.button !== 0) return;
+
+    selectionStateRef.current = { startX: relativeX, currentX: relativeX };
+    setDragStartX(relativeX);
+    setDragCurrentX(relativeX);
+    setIsSelecting(true);
     suppressClickRef.current = false;
-    setIsPanning(true);
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
 
-  const handlePanMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    const panState = panStateRef.current;
-    if (!panState || innerWidth <= 0) return;
+  const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (innerWidth <= 0) return;
 
-    const deltaX = event.clientX - panState.startClientX;
-    if (Math.abs(deltaX) > 3) {
-      suppressClickRef.current = true;
+    const panState = panStateRef.current;
+    if (panState) {
+      const deltaX = event.clientX - panState.startClientX;
+      if (Math.abs(deltaX) > 3) {
+        suppressClickRef.current = true;
+      }
+
+      const panDelta = (-deltaX / innerWidth) * zoomRange;
+      const nextZoom = clampZoomWindow(
+        panState.startZoomStart + panDelta,
+        panState.startZoomStart + zoomRange + panDelta,
+        minZoomRange,
+      );
+      dispatch({ type: "SET_ZOOM", ...nextZoom });
+      return;
     }
 
-    const panDelta = (-deltaX / innerWidth) * zoomRange;
-    const nextZoom = clampZoomWindow(
-      panState.startZoomStart + panDelta,
-      panState.startZoomStart + zoomRange + panDelta,
-      minZoomRange,
+    if (!selectionStateRef.current) return;
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeX = Math.min(
+      Math.max(event.clientX - bounds.left - margin.left, 0),
+      innerWidth,
     );
-    dispatch({ type: "SET_ZOOM", ...nextZoom });
+    if (Math.abs(relativeX - selectionStateRef.current.startX) > 3) {
+      suppressClickRef.current = true;
+    }
+    selectionStateRef.current = {
+      ...selectionStateRef.current,
+      currentX: relativeX,
+    };
+    setDragCurrentX(relativeX);
   };
 
-  const handlePanEnd = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!panStateRef.current) return;
+  const handlePointerEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (panStateRef.current) {
+      panStateRef.current = null;
+      setIsPanning(false);
+    }
 
-    panStateRef.current = null;
-    setIsPanning(false);
+    if (selectionStateRef.current) {
+      commitSelectionFromBounds({
+        left: Math.min(
+          selectionStateRef.current.startX,
+          selectionStateRef.current.currentX,
+        ),
+        right: Math.max(
+          selectionStateRef.current.startX,
+          selectionStateRef.current.currentX,
+        ),
+      });
+      selectionStateRef.current = null;
+      setDragStartX(null);
+      setDragCurrentX(null);
+      setIsSelecting(false);
+    }
+
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -332,15 +471,9 @@ export function WaveformCanvas() {
             OV
           </ToggleGroupItem>
         </ToggleGroup>
-        <Button
-          variant={regionSelectMode ? "default" : "outline"}
-          size="xs"
-          onClick={() => setRegionSelectMode((current) => !current)}
-          disabled={!effect}
-        >
-          <SquarePen data-icon="inline-start" />
-          Region Mode
-        </Button>
+        <span className="text-[10px] text-muted-foreground">
+          Left-drag select · Right-drag pan · `C` clip · `N` waveform
+        </span>
         <div className="ml-auto flex min-w-48 items-center gap-2">
           <ScanSearch className="size-3.5 text-muted-foreground" />
           <Slider
@@ -386,18 +519,12 @@ export function WaveformCanvas() {
           <svg
             width={width}
             height={canvasHeight}
-            className={isPanning ? "block cursor-grabbing" : zoomRange < 1 && !regionSelectMode ? "block cursor-grab" : "block"}
-            onPointerDown={handlePanStart}
-            onPointerMove={handlePanMove}
-            onPointerUp={handlePanEnd}
-            onPointerCancel={handlePanEnd}
-            onMouseLeave={() => {
-              if (dragStartX !== null) {
-                createSelectionFromDrag();
-                setDragStartX(null);
-                setDragCurrentX(null);
-              }
-            }}
+            className={isPanning ? "block cursor-grabbing" : isSelecting ? "block cursor-crosshair" : "block cursor-crosshair"}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerEnd}
+            onPointerCancel={handlePointerEnd}
+            onContextMenu={(event) => event.preventDefault()}
           >
             <g transform={`translate(${margin.left},${margin.top})`}>
               {[-128, -64, 0, 64, 127].map((tick) => (
@@ -433,6 +560,16 @@ export function WaveformCanvas() {
                 />
               )}
 
+              <rect
+                x={0}
+                y={timelineTop}
+                width={innerWidth}
+                height={timelineHeight}
+                rx={4}
+                fill="var(--muted)"
+                opacity={0.35}
+              />
+
               {effect.regions.map((region) => {
                 const regionStart = Math.max(startSample, region.start);
                 const regionEnd = Math.min(endSample, region.end);
@@ -443,11 +580,13 @@ export function WaveformCanvas() {
                 return (
                   <g
                     key={region.id}
+                    data-clip-id={region.id}
                     onClick={() => {
                       if (suppressClickRef.current) return;
+                      setSelectionRange({ start: region.start, end: region.end });
                       dispatch({ type: "SET_SELECTED_REGION", id: region.id });
                     }}
-                    style={{ cursor: regionSelectMode ? "crosshair" : "pointer" }}
+                    style={{ cursor: "pointer" }}
                   >
                     <rect
                       x={x}
@@ -475,10 +614,19 @@ export function WaveformCanvas() {
                       strokeWidth={isSelected ? 2 : 1}
                       opacity={0.6}
                     />
+                    <rect
+                      x={x}
+                      y={timelineBlockTop}
+                      width={regionWidth}
+                      height={timelineBlockHeight}
+                      rx={4}
+                      fill="var(--waveform-accent)"
+                      opacity={isSelected ? 0.9 : 0.65}
+                    />
                     {regionWidth > 56 && (
                       <text
                         x={x + 6}
-                        y={14}
+                        y={timelineBlockTop + timelineBlockHeight / 2 + 3}
                         fill="var(--foreground)"
                         fontSize="10"
                       >
@@ -528,36 +676,21 @@ export function WaveformCanvas() {
                   width={selectionBounds.right - selectionBounds.left}
                   height={innerHeight}
                   fill="var(--waveform-accent)"
-                  opacity={0.18}
+                  opacity={0.12}
                 />
               )}
 
-              <rect
-                x={0}
-                y={0}
-                width={innerWidth}
-                height={innerHeight}
-                fill="transparent"
-                pointerEvents={regionSelectMode ? "all" : "none"}
-                onMouseDown={(event) => {
-                  if (!regionSelectMode) return;
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  const relativeX = event.clientX - bounds.left;
-                  setDragStartX(relativeX);
-                  setDragCurrentX(relativeX);
-                }}
-                onMouseMove={(event) => {
-                  if (dragStartX === null) return;
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  setDragCurrentX(event.clientX - bounds.left);
-                }}
-                onMouseUp={() => {
-                  if (dragStartX === null) return;
-                  createSelectionFromDrag();
-                  setDragStartX(null);
-                  setDragCurrentX(null);
-                }}
-              />
+              {selectionBounds && (
+                <rect
+                  x={selectionBounds.left}
+                  y={timelineBlockTop}
+                  width={selectionBounds.right - selectionBounds.left}
+                  height={timelineBlockHeight}
+                  rx={4}
+                  fill="var(--waveform-accent)"
+                  opacity={0.25}
+                />
+              )}
 
               <line
                 x1={0}
@@ -567,6 +700,15 @@ export function WaveformCanvas() {
                 stroke="var(--border)"
                 strokeWidth={1}
               />
+
+              <text
+                x={6}
+                y={timelineTop + 14}
+                fill="var(--muted-foreground)"
+                fontSize="9"
+              >
+                CLIPS
+              </text>
 
               {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                 const sample = Math.round(

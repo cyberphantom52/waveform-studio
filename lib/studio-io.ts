@@ -11,6 +11,7 @@ import {
   createEmptyRegionOverrides,
 } from "@/lib/dsp/remaster";
 import type { FamilyPreset, StudioEffect, StudioState } from "@/lib/studio-context";
+import type { Region } from "@/lib/dsp/region";
 
 export function createStudioEffect(
   waveform: WaveformData,
@@ -83,6 +84,95 @@ export function downloadWaveformBin(filename: string, samples: Int8Array) {
       type: "application/octet-stream",
     })
   );
+}
+
+function slugifyWaveformPartName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+
+function buildSelectionWaveformName(effect: StudioEffect, label: string) {
+  const slug = slugifyWaveformPartName(label);
+  return `${effect.waveform.name}_${slug || "selection"}`;
+}
+
+
+function buildRegionWaveformName(effect: StudioEffect, region: Region) {
+  return buildSelectionWaveformName(effect, region.name);
+}
+
+export function getRenderedWaveformSamples(effect: StudioEffect) {
+  if (effect.remastered) return new Int8Array(effect.remastered);
+  return computeRemasteredWaveform(
+    effect.waveform.samples,
+    effect.waveform.sampleRate,
+    effect.chain,
+    effect.regions,
+    effect.remasterInfo?.originalStats,
+  ).result;
+}
+
+export function createStudioEffectFromRegion(effect: StudioEffect, region: Region) {
+  const rendered = getRenderedWaveformSamples(effect);
+  const clipSamples = rendered.slice(region.start, region.end);
+  const waveformName = buildRegionWaveformName(effect, region);
+  const bounced = createStudioEffect(
+    {
+      id: crypto.randomUUID(),
+      name: waveformName,
+      samples: clipSamples,
+      sampleRate: effect.waveform.sampleRate,
+    },
+    effect.playRateHz,
+    effect.metadata,
+  );
+
+  return {
+    ...bounced,
+    familyTag: effect.familyTag,
+    playRateHz: effect.playRateHz,
+    notes: `Bounced from ${effect.waveform.name} · ${region.name}`,
+  };
+}
+
+
+export function createStudioEffectFromSelection(
+  effect: StudioEffect,
+  start: number,
+  end: number,
+  label = "selection",
+) {
+  const rendered = getRenderedWaveformSamples(effect);
+  const safeStart = Math.min(start, end);
+  const safeEnd = Math.max(start, end, safeStart + 1);
+  const clipSamples = rendered.slice(safeStart, safeEnd);
+  const bounced = createStudioEffect(
+    {
+      id: crypto.randomUUID(),
+      name: buildSelectionWaveformName(effect, label),
+      samples: clipSamples,
+      sampleRate: effect.waveform.sampleRate,
+    },
+    effect.playRateHz,
+    effect.metadata,
+  );
+
+  return {
+    ...bounced,
+    familyTag: effect.familyTag,
+    playRateHz: effect.playRateHz,
+    notes: `Bounced from ${effect.waveform.name} · ${label}`,
+  };
+}
+
+export function downloadRegionWaveformBin(effect: StudioEffect, region: Region) {
+  const rendered = getRenderedWaveformSamples(effect);
+  const filename = `${buildRegionWaveformName(effect, region)}.bin`;
+  downloadWaveformBin(filename, rendered.slice(region.start, region.end));
 }
 
 async function sha256Hex(data: Int8Array): Promise<string> {
@@ -161,10 +251,10 @@ export function createRegionSelection(
   const safeEnd = Math.max(start, end, safeStart + 1);
   return {
     id: crypto.randomUUID(),
-    name: `Region ${existingRegions.length + 1}`,
+    name: `Clip ${existingRegions.length + 1}`,
     start: safeStart,
     end: safeEnd,
-    crossfadeSamples: 20,
+    crossfadeSamples: 0,
     overrides: createEmptyRegionOverrides(),
   };
 }

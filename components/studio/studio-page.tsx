@@ -57,7 +57,7 @@ export function StudioPage() {
                       value="regions"
                       className="h-6 px-2.5 text-[10px] data-[state=active]:bg-muted"
                     >
-                      Regions
+                      Clips
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent

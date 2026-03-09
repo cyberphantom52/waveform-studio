@@ -23,6 +23,106 @@ export interface RegionApplyResult {
   clippedTotal: number;
 }
 
+function cloneRegionOverrides(region: Region): Region["overrides"] {
+  return {
+    gain: region.overrides.gain ? { ...region.overrides.gain } : null,
+    smoothing: region.overrides.smoothing
+      ? { ...region.overrides.smoothing }
+      : null,
+    deadzone: region.overrides.deadzone
+      ? { ...region.overrides.deadzone }
+      : null,
+    envelope: region.overrides.envelope
+      ? {
+          points: region.overrides.envelope.points.map((point) => ({
+            ...point,
+          })),
+        }
+      : null,
+  };
+}
+
+function clampRegionRange(region: Region, sampleCount: number): Region {
+  const start = Math.max(0, Math.min(region.start, sampleCount - 1));
+  const end = Math.max(start + 1, Math.min(region.end, sampleCount));
+  return {
+    ...region,
+    start,
+    end,
+    crossfadeSamples: Math.max(
+      0,
+      Math.min(region.crossfadeSamples, Math.floor((end - start) / 2)),
+    ),
+    overrides: cloneRegionOverrides(region),
+  };
+}
+
+function createRegionSegment(
+  region: Region,
+  start: number,
+  end: number,
+  suffix: string,
+  preserveId = false,
+): Region {
+  return {
+    ...region,
+    id: preserveId ? region.id : crypto.randomUUID(),
+    name: suffix ? `${region.name} ${suffix}` : region.name,
+    start,
+    end,
+    crossfadeSamples: Math.max(
+      0,
+      Math.min(region.crossfadeSamples, Math.floor((end - start) / 2)),
+    ),
+    overrides: cloneRegionOverrides(region),
+  };
+}
+
+export function upsertTimelineRegion(
+  existingRegions: Region[],
+  region: Region,
+  sampleCount: number,
+): Region[] {
+  if (sampleCount <= 0) return [];
+
+  const inserted = clampRegionRange(region, sampleCount);
+  const nextRegions: Region[] = [];
+
+  for (const existingRegion of existingRegions) {
+    if (existingRegion.id === inserted.id) continue;
+
+    const current = clampRegionRange(existingRegion, sampleCount);
+    if (current.end <= inserted.start || current.start >= inserted.end) {
+      nextRegions.push(current);
+      continue;
+    }
+
+    const keepsLeft = current.start < inserted.start;
+    const keepsRight = current.end > inserted.end;
+
+    if (keepsLeft) {
+      nextRegions.push(
+        createRegionSegment(current, current.start, inserted.start, keepsRight ? "A" : "", true),
+      );
+    }
+
+    if (keepsRight) {
+      nextRegions.push(
+        createRegionSegment(
+          current,
+          inserted.end,
+          current.end,
+          keepsLeft ? "B" : "",
+          !keepsLeft,
+        ),
+      );
+    }
+  }
+
+  nextRegions.push(inserted);
+  return nextRegions.sort((left, right) => left.start - right.start);
+}
+
 function buildRegionChain(region: Region): TransformStep[] {
   const steps: TransformStep[] = [];
   if (region.overrides.gain) {

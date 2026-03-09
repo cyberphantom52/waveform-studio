@@ -10,7 +10,7 @@ import {
 import type { WaveformData, EffectMetadata } from "./dsp/waveform";
 import type { TransformStep, TransformType } from "./dsp/transforms";
 import { getDefaultParams } from "./dsp/transforms";
-import type { Region } from "./dsp/region";
+import { upsertTimelineRegion, type Region } from "./dsp/region";
 import type { WaveformStats } from "./dsp/stats";
 import { computeRemasteredWaveform } from "./dsp/remaster";
 import { clampZoomWindow } from "./zoom";
@@ -254,6 +254,10 @@ function recomputeRemaster(effect: StudioEffect): StudioEffect {
   };
 }
 
+function getRegionSampleCount(effect: StudioEffect) {
+  return effect.remastered?.length ?? effect.waveform.samples.length;
+}
+
 function pushUndo(state: StudioState): StudioState {
   return {
     ...state,
@@ -273,6 +277,7 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         families: buildFamilies(effects),
         activeEffectIndex: effects.length - 1,
         activeTransformIndex: 0,
+        zoom: { start: 0, end: 1 },
         selectedRegionId: null,
       };
     }
@@ -285,6 +290,7 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         families: buildFamilies(effects),
         activeEffectIndex: effects.length - 1,
         activeTransformIndex: 0,
+        zoom: { start: 0, end: 1 },
         selectedRegionId: null,
       };
     }
@@ -483,10 +489,14 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
       if (!effect) return s;
-      const updated = {
+      const updated = recomputeRemaster({
         ...effect,
-        regions: [...effect.regions, action.region],
-      };
+        regions: upsertTimelineRegion(
+          effect.regions,
+          action.region,
+          getRegionSampleCount(effect),
+        ),
+      });
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -496,10 +506,10 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
       if (!effect) return s;
-      const updated = {
+      const updated = recomputeRemaster({
         ...effect,
         regions: effect.regions.filter((r) => r.id !== action.id),
-      };
+      });
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
@@ -514,25 +524,28 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
       if (!effect) return s;
-      const updated = { ...effect, regions: [] };
+      const updated = recomputeRemaster({ ...effect, regions: [] });
       const effects = s.effects.map((e, i) =>
         i === s.activeEffectIndex ? updated : e,
       );
       return { ...s, effects, selectedRegionId: null };
     }
     case "UPDATE_REGION": {
-      const effect = state.effects[state.activeEffectIndex];
-      if (!effect) return state;
+      const s = pushUndo(state);
+      const effect = s.effects[s.activeEffectIndex];
+      if (!effect) return s;
       const updated = recomputeRemaster({
         ...effect,
-        regions: effect.regions.map((r) =>
-          r.id === action.region.id ? action.region : r,
+        regions: upsertTimelineRegion(
+          effect.regions,
+          action.region,
+          getRegionSampleCount(effect),
         ),
       });
-      const effects = state.effects.map((e, i) =>
-        i === state.activeEffectIndex ? updated : e,
+      const effects = s.effects.map((e, i) =>
+        i === s.activeEffectIndex ? updated : e,
       );
-      return { ...state, effects };
+      return { ...s, effects };
     }
     case "SET_SELECTED_REGION":
       return { ...state, selectedRegionId: action.id };
