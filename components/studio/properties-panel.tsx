@@ -41,13 +41,13 @@ export function PropertiesPanel() {
         ? currentDurationMs.toFixed(1)
         : currentDurationMs.toFixed(2);
 
-  const commitDurationMs = () => {
+  const commitDurationMs = (exitEditing = true) => {
     if (!effect) return;
     const nextDurationMs = Number(durationMsInput || currentDurationText);
     const fallbackText = currentDurationText;
     if (!Number.isFinite(nextDurationMs) || nextDurationMs <= 0) {
       setDurationMsInput(fallbackText);
-      setIsEditingDuration(false);
+      if (exitEditing) setIsEditingDuration(false);
       return;
     }
 
@@ -60,7 +60,7 @@ export function PropertiesPanel() {
       type: "SET_TIMELINE_LENGTH_SAMPLES",
       sampleCount: nextTimelineSampleCount,
     });
-    setIsEditingDuration(false);
+    if (exitEditing) setIsEditingDuration(false);
   };
 
   if (!effect) {
@@ -122,7 +122,7 @@ export function PropertiesPanel() {
                 setDurationMsInput(currentDurationText);
               }}
               onChange={(event) => setDurationMsInput(event.target.value)}
-              onBlur={commitDurationMs}
+              onBlur={() => commitDurationMs(true)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();
@@ -133,7 +133,7 @@ export function PropertiesPanel() {
                 
                 if (event.key !== "Enter") return;
                 event.preventDefault();
-                commitDurationMs();
+                commitDurationMs(false);
               }}
             />
           </div>
