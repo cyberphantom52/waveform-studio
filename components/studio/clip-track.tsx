@@ -18,7 +18,7 @@ interface ClipTrackProps {
   endSample: number;
   selectedRegionId: string | null;
   cursorX: number | null;
-  insertMarkerX: number | null;
+  insertPreviewBounds: { left: number; width: number; valid: boolean } | null;
   xForSample: (sample: number) => number;
   onClipClick: (regionId: string) => void;
 }
@@ -35,7 +35,7 @@ export function ClipTrack({
   endSample,
   selectedRegionId,
   cursorX,
-  insertMarkerX,
+  insertPreviewBounds,
   xForSample,
   onClipClick,
 }: ClipTrackProps) {
@@ -128,23 +128,33 @@ export function ClipTrack({
         />
       )}
 
-      {insertMarkerX !== null && (
+      {insertPreviewBounds && (
         <>
           <rect
-            x={insertMarkerX - 5}
+            x={insertPreviewBounds.left}
             y={timelineTop + 2}
-            width={10}
+            width={insertPreviewBounds.width}
             height={timelineHeight - 4}
             rx={4}
-            fill="var(--waveform-accent)"
+            fill={insertPreviewBounds.valid ? "var(--waveform-accent)" : "var(--destructive)"}
             opacity={0.18}
           />
           <line
-            x1={insertMarkerX}
-            x2={insertMarkerX}
+            x1={insertPreviewBounds.left}
+            x2={insertPreviewBounds.left}
             y1={timelineTop + 2}
             y2={timelineTop + timelineHeight - 2}
-            stroke="var(--waveform-accent)"
+            stroke={insertPreviewBounds.valid ? "var(--waveform-accent)" : "var(--destructive)"}
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            opacity={0.95}
+          />
+          <line
+            x1={insertPreviewBounds.left + insertPreviewBounds.width}
+            x2={insertPreviewBounds.left + insertPreviewBounds.width}
+            y1={timelineTop + 2}
+            y2={timelineTop + timelineHeight - 2}
+            stroke={insertPreviewBounds.valid ? "var(--waveform-accent)" : "var(--destructive)"}
             strokeWidth={2}
             strokeDasharray="4 3"
             opacity={0.95}

@@ -30,14 +30,18 @@ export function createDefaultRegion(
 }
 
 export function sanitizeRegion(region: Region, sampleCount: number): Region {
-  const start = Math.max(0, Math.min(region.start, sampleCount));
-  const end = Math.max(start, Math.min(region.end, sampleCount));
+  const sourceSampleCount = region.sourceSamples?.length ?? sampleCount;
+  const start = Math.max(0, Math.min(region.start, sourceSampleCount));
+  const end = Math.max(start, Math.min(region.end, sourceSampleCount));
   const timelineLength = Math.max(1, region.timelineLength ?? end - start);
   return {
     ...region,
     start,
     end,
     timelineLength,
+    sourceSamples: region.sourceSamples
+      ? new Int8Array(region.sourceSamples)
+      : undefined,
     crossfadeSamples: Math.max(
       0,
       Math.min(region.crossfadeSamples, Math.floor(timelineLength / 2)),

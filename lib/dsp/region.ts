@@ -7,6 +7,7 @@ export interface Region {
   timelineLength: number;
   start: number;
   end: number;
+  sourceSamples?: Int8Array;
   crossfadeSamples: number;
   chain: TransformStep[];
 }
@@ -22,6 +23,14 @@ function cloneRegionChain(region: Region) {
     enabled: step.enabled,
     params: structuredClone(step.params),
   }));
+}
+
+function getRegionSourceSampleCount(region: Region, fallbackCount: number) {
+  return region.sourceSamples?.length ?? fallbackCount;
+}
+
+function getRegionSourceArray(region: Region, fallbackSamples: Int8Array) {
+  return region.sourceSamples ?? fallbackSamples;
 }
 
 function resampleClip(samples: Int8Array, targetLength: number) {
@@ -63,8 +72,9 @@ function resampleClip(samples: Int8Array, targetLength: number) {
 }
 
 function clampRegionRange(region: Region, sampleCount: number): Region {
-  const start = Math.max(0, Math.min(region.start, sampleCount - 1));
-  const end = Math.max(start + 1, Math.min(region.end, sampleCount));
+  const sourceSampleCount = getRegionSourceSampleCount(region, sampleCount);
+  const start = Math.max(0, Math.min(region.start, sourceSampleCount - 1));
+  const end = Math.max(start + 1, Math.min(region.end, sourceSampleCount));
   const timelineLength = Math.max(1, region.timelineLength ?? end - start);
   return {
     ...region,
@@ -75,6 +85,9 @@ function clampRegionRange(region: Region, sampleCount: number): Region {
       0,
       Math.min(region.crossfadeSamples, Math.floor(timelineLength / 2)),
     ),
+    sourceSamples: region.sourceSamples
+      ? new Int8Array(region.sourceSamples)
+      : undefined,
     chain: cloneRegionChain(region),
   };
 }
@@ -101,6 +114,9 @@ function createRegionSegment(
         Math.floor(Math.max(1, timelineLength) / 2),
       ),
     ),
+    sourceSamples: region.sourceSamples
+      ? new Int8Array(region.sourceSamples)
+      : undefined,
     chain: cloneRegionChain(region),
   };
 }
@@ -175,9 +191,60 @@ export function getTimelineLength(regions: Region[], fallbackLength: number) {
   );
 }
 
+export function getValidTimelineInsertion(
+  regions: Region[],
+  timelineStart: number,
+  clipLength: number,
+  fallbackLength: number,
+) {
+  if (clipLength <= 0 || fallbackLength <= 0) return null;
+
+  const occupiedLength =
+    regions.length === 0
+      ? 0
+      : regions.reduce(
+          (max, region) =>
+            Math.max(max, region.timelineStart + getRegionLength(region)),
+          0,
+        );
+  const totalLength = Math.max(fallbackLength, occupiedLength);
+  const safeStart = Math.max(0, Math.min(timelineStart, totalLength));
+  const safeEnd = safeStart + clipLength;
+  if (safeEnd > totalLength) return null;
+
+  const sorted = [...regions].sort(
+    (left, right) => left.timelineStart - right.timelineStart,
+  );
+  let gapStart = 0;
+
+  for (const region of sorted) {
+    const regionStart = region.timelineStart;
+    const regionEnd = region.timelineStart + getRegionLength(region);
+
+    if (safeStart < regionStart) {
+      return safeStart >= gapStart && safeEnd <= regionStart
+        ? { start: safeStart, end: safeEnd }
+        : null;
+    }
+
+    if (safeStart >= regionStart && safeStart < regionEnd) {
+      return null;
+    }
+
+    gapStart = Math.max(gapStart, regionEnd);
+  }
+
+  return safeStart >= gapStart && safeEnd <= totalLength
+    ? { start: safeStart, end: safeEnd }
+    : null;
+}
+
 function cloneRegion(region: Region): Region {
   return {
     ...region,
+    sourceSamples: region.sourceSamples
+      ? new Int8Array(region.sourceSamples)
+      : undefined,
     chain: cloneRegionChain(region),
   };
 }
@@ -200,6 +267,9 @@ function createTimelineRegion(
       start,
       end,
       crossfadeSamples: 0,
+      sourceSamples: region.sourceSamples
+        ? new Int8Array(region.sourceSamples)
+        : undefined,
       chain: cloneRegionChain(region),
     };
   }
@@ -221,11 +291,12 @@ export function buildTimelineSamples(samples: Int8Array, regions: Region[]) {
 
   const result = new Int8Array(getTimelineLength(regions, samples.length));
   for (const region of regions) {
-    const safeStart = Math.max(0, Math.min(region.start, samples.length));
-    const safeEnd = Math.max(safeStart, Math.min(region.end, samples.length));
+    const sourceSamples = getRegionSourceArray(region, samples);
+    const safeStart = Math.max(0, Math.min(region.start, sourceSamples.length));
+    const safeEnd = Math.max(safeStart, Math.min(region.end, sourceSamples.length));
     if (safeEnd <= safeStart) continue;
     result.set(
-      resampleClip(samples.slice(safeStart, safeEnd), getRegionLength(region)),
+      resampleClip(sourceSamples.slice(safeStart, safeEnd), getRegionLength(region)),
       region.timelineStart,
     );
   }
@@ -513,11 +584,12 @@ export function renderTimelineRegions(
   let clippedTotal = 0;
 
   for (const region of regions) {
-    const safeStart = Math.max(0, Math.min(region.start, samples.length));
-    const safeEnd = Math.max(safeStart, Math.min(region.end, samples.length));
+    const sourceSamples = getRegionSourceArray(region, samples);
+    const safeStart = Math.max(0, Math.min(region.start, sourceSamples.length));
+    const safeEnd = Math.max(safeStart, Math.min(region.end, sourceSamples.length));
     if (safeEnd <= safeStart) continue;
 
-    const source = samples.slice(safeStart, safeEnd);
+    const source = sourceSamples.slice(safeStart, safeEnd);
     const chain = buildRegionChain(region);
     if (chain.length === 0) {
       rendered.set(

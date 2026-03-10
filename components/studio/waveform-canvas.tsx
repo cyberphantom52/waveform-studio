@@ -9,6 +9,7 @@ import {
 } from "@/lib/studio-io";
 import {
   getRegionLength,
+  getValidTimelineInsertion,
   splitTimelineRegionsAtCursor,
   type Region,
 } from "@/lib/dsp/region";
@@ -127,7 +128,9 @@ export function WaveformCanvas() {
     "remastered",
   ]);
   const [cursorSample, setCursorSample] = useState<number | null>(null);
-  const [insertMarkerSample, setInsertMarkerSample] = useState<number | null>(null);
+  const [insertPreview, setInsertPreview] = useState<
+    { start: number; end: number; valid: boolean } | null
+  >(null);
   const [dragTooltip, setDragTooltip] = useState<{ x: number; y: number } | null>(null);
   const effect = state.effects[state.activeEffectIndex];
   const canvasHeight = state.canvasConfig.height;
@@ -557,12 +560,17 @@ export function WaveformCanvas() {
     cursorSample !== null && cursorSample >= startSample && cursorSample <= endSample
       ? xForSample(cursorSample)
       : null;
-  const visibleInsertMarkerX =
-    insertMarkerSample !== null &&
-    insertMarkerSample >= startSample &&
-    insertMarkerSample <= endSample
-      ? xForSample(insertMarkerSample)
-      : null;
+  const visibleInsertPreviewBounds = insertPreview
+    ? {
+        left: Math.max(0, Math.min(innerWidth, xForSample(insertPreview.start))),
+        width: Math.max(
+          2,
+          Math.min(innerWidth, xForSample(insertPreview.end)) -
+            Math.max(0, Math.min(innerWidth, xForSample(insertPreview.start))),
+        ),
+        valid: insertPreview.valid,
+      }
+    : null;
   const cursorPositionMs =
     effect && cursorSample !== null
       ? (cursorSample / effect.waveform.sampleRate) * 1000
@@ -589,13 +597,26 @@ export function WaveformCanvas() {
   const handleTimelineDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (!effect) return;
     const dragTypes = Array.from(event.dataTransfer.types);
-    if (!dragTypes.includes(BROWSE_WAVEFORM_DRAG_TYPE)) return;
+    if (!dragTypes.includes(BROWSE_WAVEFORM_DRAG_TYPE)) {
+      if (insertPreview !== null) setInsertPreview(null);
+      return;
+    }
+    const sourceEffectId = event.dataTransfer.getData(BROWSE_WAVEFORM_DRAG_TYPE);
+    const sourceEffect = state.effects.find(
+      (entry) => entry.waveform.id === sourceEffectId,
+    );
+    if (!sourceEffect) {
+      if (insertPreview !== null) setInsertPreview(null);
+      return;
+    }
+    const sourceLength =
+      (sourceEffect.remastered ?? sourceEffect.waveform.samples).length;
     const bounds = event.currentTarget.getBoundingClientRect();
     const relativeY = event.clientY - bounds.top - margin.top;
     const isOverTimeline =
       relativeY >= timelineTop && relativeY <= timelineTop + timelineHeight;
     if (!isOverTimeline) {
-      if (insertMarkerSample !== null) setInsertMarkerSample(null);
+      if (insertPreview !== null) setInsertPreview(null);
       return;
     }
     event.preventDefault();
@@ -604,41 +625,69 @@ export function WaveformCanvas() {
       Math.max(event.clientX - bounds.left - margin.left, 0),
       innerWidth,
     );
-    setInsertMarkerSample(cursorFromPoint(relativeX));
+    const attemptedStart = cursorFromPoint(relativeX);
+    const attemptedEnd = attemptedStart + sourceLength;
+    const insertion = getValidTimelineInsertion(
+      effect.regions,
+      attemptedStart,
+      sourceLength,
+      effect.waveform.samples.length,
+    );
+    setInsertPreview(
+      insertion
+        ? { start: insertion.start, end: insertion.end, valid: true }
+        : { start: attemptedStart, end: attemptedEnd, valid: false },
+    );
   };
 
   const handleTimelineDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-    setInsertMarkerSample(null);
+    setInsertPreview(null);
   };
 
   const handleTimelineDrop = (event: React.DragEvent<HTMLDivElement>) => {
     if (!effect || innerWidth <= 0) return;
     const sourceEffectId = event.dataTransfer.getData(BROWSE_WAVEFORM_DRAG_TYPE);
     if (!sourceEffectId) {
-      setInsertMarkerSample(null);
+      setInsertPreview(null);
       return;
     }
+    const sourceEffect = state.effects.find(
+      (entry) => entry.waveform.id === sourceEffectId,
+    );
+    if (!sourceEffect) {
+      setInsertPreview(null);
+      return;
+    }
+    const sourceLength =
+      (sourceEffect.remastered ?? sourceEffect.waveform.samples).length;
 
     const bounds = event.currentTarget.getBoundingClientRect();
     const relativeY = event.clientY - bounds.top - margin.top;
     const isOverTimeline =
       relativeY >= timelineTop && relativeY <= timelineTop + timelineHeight;
     if (!isOverTimeline) {
-      setInsertMarkerSample(null);
+      setInsertPreview(null);
       return;
     }
 
-    event.preventDefault();
     const relativeX = Math.min(
       Math.max(event.clientX - bounds.left - margin.left, 0),
       innerWidth,
     );
-    setInsertMarkerSample(null);
+    const insertion = getValidTimelineInsertion(
+      effect.regions,
+      cursorFromPoint(relativeX),
+      sourceLength,
+      effect.waveform.samples.length,
+    );
+    setInsertPreview(null);
+    if (!insertion) return;
+    event.preventDefault();
     dispatch({
       type: "INSERT_EFFECT_CLIP",
       sourceEffectId,
-      timelineStart: cursorFromPoint(relativeX),
+      timelineStart: insertion.start,
     });
   };
 
@@ -1141,7 +1190,7 @@ export function WaveformCanvas() {
                 endSample={endSample}
                 selectedRegionId={state.selectedRegionId}
                 cursorX={visibleCursorX}
-                insertMarkerX={visibleInsertMarkerX}
+                insertPreviewBounds={visibleInsertPreviewBounds}
                 xForSample={xForSample}
                 onClipClick={(regionId) => {
                   if (suppressClickRef.current) return;

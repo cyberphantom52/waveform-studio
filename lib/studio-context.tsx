@@ -11,8 +11,7 @@ import type { WaveformData, EffectMetadata } from "./dsp/waveform";
 import type { TransformStep, TransformType } from "./dsp/transforms";
 import { getDefaultParams } from "./dsp/transforms";
 import {
-  getTimelineLength,
-  splitTimelineRegionsAtCursor,
+  getValidTimelineInsertion,
   type Region,
 } from "./dsp/region";
 import type { WaveformStats } from "./dsp/stats";
@@ -165,13 +164,6 @@ function cloneWaveform(waveform: WaveformData): WaveformData {
   };
 }
 
-function appendSamples(base: Int8Array, extra: Int8Array) {
-  const combined = new Int8Array(base.length + extra.length);
-  combined.set(base);
-  combined.set(extra, base.length);
-  return combined;
-}
-
 function insertEffectClipIntoTimeline(
   effect: StudioEffect,
   sourceEffect: StudioEffect,
@@ -183,36 +175,27 @@ function insertEffectClipIntoTimeline(
     return { effect, insertedRegionId: null as string | null };
   }
 
-  const safeTimelineStart = Math.max(
-    0,
-    Math.min(timelineStart, getTimelineLength(effect.regions, effect.waveform.samples.length)),
-  );
-  const splitRegions = splitTimelineRegionsAtCursor(
+  const insertion = getValidTimelineInsertion(
     effect.regions,
-    safeTimelineStart,
+    timelineStart,
+    sourceSamples.length,
     effect.waveform.samples.length,
-  ).regions;
-  const appendedStart = effect.waveform.samples.length;
-  const appendedEnd = appendedStart + sourceSamples.length;
-  const shiftedRegions = splitRegions.map((region) =>
-    region.timelineStart >= safeTimelineStart
-      ? {
-          ...region,
-          timelineStart: region.timelineStart + sourceSamples.length,
-        }
-      : region,
   );
+  if (!insertion) {
+    return { effect, insertedRegionId: null as string | null };
+  }
   const insertedRegion: Region = {
     id: crypto.randomUUID(),
-    name: `Clip ${shiftedRegions.length + 1}`,
-    timelineStart: safeTimelineStart,
+    name: `Clip ${effect.regions.length + 1}`,
+    timelineStart: insertion.start,
     timelineLength: sourceSamples.length,
-    start: appendedStart,
-    end: appendedEnd,
+    start: 0,
+    end: sourceSamples.length,
+    sourceSamples: new Int8Array(sourceSamples),
     crossfadeSamples: 0,
     chain: [],
   };
-  const regions = [...shiftedRegions, insertedRegion]
+  const regions = [...effect.regions.map(cloneRegion), insertedRegion]
     .sort((left, right) => left.timelineStart - right.timelineStart)
     .map((region, index) => ({
       ...region,
@@ -222,10 +205,6 @@ function insertEffectClipIntoTimeline(
   return {
     effect: recomputeRemaster({
       ...effect,
-      waveform: {
-        ...effect.waveform,
-        samples: appendSamples(effect.waveform.samples, sourceSamples),
-      },
       regions,
     }),
     insertedRegionId: insertedRegion.id,
@@ -243,6 +222,9 @@ function cloneTransformStep(step: TransformStep): TransformStep {
 function cloneRegion(region: Region): Region {
   return {
     ...region,
+    sourceSamples: region.sourceSamples
+      ? new Int8Array(region.sourceSamples)
+      : undefined,
     chain: region.chain.map(cloneTransformStep),
   };
 }
