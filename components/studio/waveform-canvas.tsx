@@ -3,6 +3,7 @@
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import { computeDelta } from "@/lib/dsp/stats";
 import {
+  BROWSE_WAVEFORM_DRAG_TYPE,
   createStudioEffectFromRegion,
   getTimelineOriginalSamples,
 } from "@/lib/studio-io";
@@ -578,6 +579,37 @@ export function WaveformCanvas() {
     });
   };
 
+  const handleTimelineDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!effect) return;
+    const dragTypes = Array.from(event.dataTransfer.types);
+    if (!dragTypes.includes(BROWSE_WAVEFORM_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleTimelineDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!effect || innerWidth <= 0) return;
+    const sourceEffectId = event.dataTransfer.getData(BROWSE_WAVEFORM_DRAG_TYPE);
+    if (!sourceEffectId) return;
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeY = event.clientY - bounds.top - margin.top;
+    const isOverTimeline =
+      relativeY >= timelineTop && relativeY <= timelineTop + timelineHeight;
+    if (!isOverTimeline) return;
+
+    event.preventDefault();
+    const relativeX = Math.min(
+      Math.max(event.clientX - bounds.left - margin.left, 0),
+      innerWidth,
+    );
+    dispatch({
+      type: "INSERT_EFFECT_CLIP",
+      sourceEffectId,
+      timelineStart: cursorFromPoint(relativeX),
+    });
+  };
+
   const handleTrackHandlePointerDown = (
     trackId: string,
     event: React.PointerEvent<SVGGElement>,
@@ -1008,6 +1040,8 @@ export function WaveformCanvas() {
       <div
         ref={viewportRef}
         className="relative flex-1 overflow-hidden bg-background"
+        onDragOver={handleTimelineDragOver}
+        onDrop={handleTimelineDrop}
       >
         {!effect ? (
           <div className="flex h-full items-center justify-center">

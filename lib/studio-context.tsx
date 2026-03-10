@@ -10,7 +10,11 @@ import {
 import type { WaveformData, EffectMetadata } from "./dsp/waveform";
 import type { TransformStep, TransformType } from "./dsp/transforms";
 import { getDefaultParams } from "./dsp/transforms";
-import type { Region } from "./dsp/region";
+import {
+  getTimelineLength,
+  splitTimelineRegionsAtCursor,
+  type Region,
+} from "./dsp/region";
 import type { WaveformStats } from "./dsp/stats";
 import { computeRemasteredWaveform, createDefaultRegion } from "./dsp/remaster";
 import { clampZoomWindow } from "./zoom";
@@ -110,6 +114,11 @@ type Action =
   | { type: "CLEAR_REGIONS" }
   | { type: "UPDATE_REGION"; region: Region }
   | { type: "SET_SELECTED_REGION"; id: string | null }
+  | {
+      type: "INSERT_EFFECT_CLIP";
+      sourceEffectId: string;
+      timelineStart: number;
+    }
   | { type: "SET_METADATA"; metadata: Record<string, EffectMetadata> }
   | { type: "SET_CANVAS_CONFIG"; config: Partial<CanvasConfig> }
   | { type: "SET_GLOBAL_DEFAULT_PLAY_RATE"; playRateHz: number }
@@ -153,6 +162,73 @@ function cloneWaveform(waveform: WaveformData): WaveformData {
   return {
     ...waveform,
     samples: new Int8Array(waveform.samples),
+  };
+}
+
+function appendSamples(base: Int8Array, extra: Int8Array) {
+  const combined = new Int8Array(base.length + extra.length);
+  combined.set(base);
+  combined.set(extra, base.length);
+  return combined;
+}
+
+function insertEffectClipIntoTimeline(
+  effect: StudioEffect,
+  sourceEffect: StudioEffect,
+  timelineStart: number,
+) {
+  const sourceSamples =
+    sourceEffect.remastered ?? sourceEffect.waveform.samples;
+  if (sourceSamples.length === 0) {
+    return { effect, insertedRegionId: null as string | null };
+  }
+
+  const safeTimelineStart = Math.max(
+    0,
+    Math.min(timelineStart, getTimelineLength(effect.regions, effect.waveform.samples.length)),
+  );
+  const splitRegions = splitTimelineRegionsAtCursor(
+    effect.regions,
+    safeTimelineStart,
+    effect.waveform.samples.length,
+  ).regions;
+  const appendedStart = effect.waveform.samples.length;
+  const appendedEnd = appendedStart + sourceSamples.length;
+  const shiftedRegions = splitRegions.map((region) =>
+    region.timelineStart >= safeTimelineStart
+      ? {
+          ...region,
+          timelineStart: region.timelineStart + sourceSamples.length,
+        }
+      : region,
+  );
+  const insertedRegion: Region = {
+    id: crypto.randomUUID(),
+    name: `Clip ${shiftedRegions.length + 1}`,
+    timelineStart: safeTimelineStart,
+    timelineLength: sourceSamples.length,
+    start: appendedStart,
+    end: appendedEnd,
+    crossfadeSamples: 0,
+    chain: [],
+  };
+  const regions = [...shiftedRegions, insertedRegion]
+    .sort((left, right) => left.timelineStart - right.timelineStart)
+    .map((region, index) => ({
+      ...region,
+      name: `Clip ${index + 1}`,
+    }));
+
+  return {
+    effect: recomputeRemaster({
+      ...effect,
+      waveform: {
+        ...effect.waveform,
+        samples: appendSamples(effect.waveform.samples, sourceSamples),
+      },
+      regions,
+    }),
+    insertedRegionId: insertedRegion.id,
   };
 }
 
@@ -557,6 +633,29 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return {
         ...s,
         compareWaveform: action.waveform ? cloneWaveform(action.waveform) : null,
+      };
+    }
+    case "INSERT_EFFECT_CLIP": {
+      const s = pushUndo(state);
+      const effect = s.effects[s.activeEffectIndex];
+      const sourceEffect = s.effects.find(
+        (entry) => entry.waveform.id === action.sourceEffectId,
+      );
+      if (!effect || !sourceEffect) return s;
+      const { effect: updated, insertedRegionId } = insertEffectClipIntoTimeline(
+        effect,
+        sourceEffect,
+        action.timelineStart,
+      );
+      if (!insertedRegionId) return s;
+      const effects = s.effects.map((entry, index) =>
+        index === s.activeEffectIndex ? updated : entry,
+      );
+      return {
+        ...s,
+        effects,
+        selectedRegionId: insertedRegionId,
+        activeTransformIndex: -1,
       };
     }
     case "SET_ZOOM":
