@@ -146,9 +146,15 @@ export function WaveformCanvas() {
 
   const selectedClip =
     effect?.regions.find((region) => region.id === state.selectedRegionId) ?? null;
-  const original = effect ? getTimelineOriginalSamples(effect) : new Int8Array();
-  const remastered = effect?.remastered ?? original;
-  const baseLength = Math.max(original.length, remastered.length, 1);
+  const timelineOriginal = effect ? getTimelineOriginalSamples(effect) : new Int8Array();
+  const original = effect ? effect.waveform.samples : new Int8Array();
+  const remastered = effect?.remastered ?? timelineOriginal;
+  const baseLength = Math.max(
+    timelineOriginal.length,
+    original.length,
+    remastered.length,
+    1,
+  );
   const minZoomRange = 1 / baseLength;
   const zoomRange = state.zoom.end - state.zoom.start;
   const startSample = Math.floor(state.zoom.start * baseLength);
@@ -156,13 +162,28 @@ export function WaveformCanvas() {
     startSample + 1,
     Math.ceil(state.zoom.end * baseLength),
   );
-  const visibleOriginal = original.slice(
-    Math.min(startSample, original.length),
-    Math.min(endSample, original.length),
-  );
-  const visibleRemastered = remastered.slice(
-    Math.min(startSample, remastered.length),
-    Math.min(endSample, remastered.length),
+  const sliceSamplesWithSilence = (
+    samples: Int8Array,
+    rangeStart: number,
+    rangeEnd: number,
+  ) => {
+    const length = Math.max(0, rangeEnd - rangeStart);
+    const out = new Int8Array(length);
+    if (length === 0) return out;
+
+    const safeStart = Math.max(0, Math.min(rangeStart, samples.length));
+    const safeEnd = Math.max(safeStart, Math.min(rangeEnd, samples.length));
+    if (safeEnd <= safeStart) return out;
+
+    out.set(samples.slice(safeStart, safeEnd), safeStart - rangeStart);
+    return out;
+  };
+
+  const visibleOriginal = sliceSamplesWithSilence(original, startSample, endSample);
+  const visibleRemastered = sliceSamplesWithSilence(
+    remastered,
+    startSample,
+    endSample,
   );
   const visibleDiff = computeDelta(visibleOriginal, visibleRemastered);
 

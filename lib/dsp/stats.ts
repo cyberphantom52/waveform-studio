@@ -294,10 +294,10 @@ export function computeDelta(
   original: Int8Array,
   remastered: Int8Array,
 ): Float64Array {
-  const len = Math.min(original.length, remastered.length);
+  const len = Math.max(original.length, remastered.length);
   const delta = new Float64Array(len);
   for (let i = 0; i < len; i++) {
-    delta[i] = remastered[i] - original[i];
+    delta[i] = (remastered[i] ?? 0) - (original[i] ?? 0);
   }
   return delta;
 }
