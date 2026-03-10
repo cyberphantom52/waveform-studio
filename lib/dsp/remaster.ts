@@ -21,6 +21,7 @@ export function createDefaultRegion(
     id: crypto.randomUUID(),
     name: `Clip ${index}`,
     timelineStart: 0,
+    timelineLength: sampleCount,
     start,
     end,
     crossfadeSamples: 0,
@@ -31,13 +32,15 @@ export function createDefaultRegion(
 export function sanitizeRegion(region: Region, sampleCount: number): Region {
   const start = Math.max(0, Math.min(region.start, sampleCount));
   const end = Math.max(start, Math.min(region.end, sampleCount));
+  const timelineLength = Math.max(1, region.timelineLength ?? end - start);
   return {
     ...region,
     start,
     end,
+    timelineLength,
     crossfadeSamples: Math.max(
       0,
-      Math.min(region.crossfadeSamples, Math.floor((end - start) / 2)),
+      Math.min(region.crossfadeSamples, Math.floor(timelineLength / 2)),
     ),
   };
 }

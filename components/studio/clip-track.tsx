@@ -17,6 +17,7 @@ interface ClipTrackProps {
   timelineHeight: number;
   timelineBlockTop: number;
   timelineBlockHeight: number;
+  clipHandleWidth: number;
   selectionHandleWidth: number;
   timelineRegions: TimelineRegionEntry[];
   startSample: number;
@@ -33,6 +34,7 @@ export function ClipTrack({
   timelineHeight,
   timelineBlockTop,
   timelineBlockHeight,
+  clipHandleWidth,
   selectionHandleWidth,
   timelineRegions,
   startSample,
@@ -88,6 +90,47 @@ export function ClipTrack({
                 >
                   {region.name}
                 </text>
+              )}
+
+              {isSelected && (
+                <>
+                  <rect
+                    data-clip-handle="start"
+                    data-clip-id={region.id}
+                    x={x - clipHandleWidth / 2}
+                    y={timelineBlockTop - 2}
+                    width={clipHandleWidth}
+                    height={timelineBlockHeight + 4}
+                    fill="transparent"
+                    style={{ cursor: "ew-resize" }}
+                  />
+                  <rect
+                    data-clip-handle="end"
+                    data-clip-id={region.id}
+                    x={x + regionWidth - clipHandleWidth / 2}
+                    y={timelineBlockTop - 2}
+                    width={clipHandleWidth}
+                    height={timelineBlockHeight + 4}
+                    fill="transparent"
+                    style={{ cursor: "ew-resize" }}
+                  />
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={timelineBlockTop - 2}
+                    y2={timelineBlockTop + timelineBlockHeight + 2}
+                    stroke="var(--waveform-accent)"
+                    strokeWidth={2}
+                  />
+                  <line
+                    x1={x + regionWidth}
+                    x2={x + regionWidth}
+                    y1={timelineBlockTop - 2}
+                    y2={timelineBlockTop + timelineBlockHeight + 2}
+                    stroke="var(--waveform-accent)"
+                    strokeWidth={2}
+                  />
+                </>
               )}
             </g>
           </g>

@@ -84,6 +84,19 @@ export function WaveformCanvas() {
   const trackDragRef = useRef<{
     trackId: WaveformTrackId;
   } | null>(null);
+  const clipStretchRef = useRef<
+    | {
+        mode: "start" | "end";
+        region: Region;
+        startClientX: number;
+        minStart?: number;
+        maxStart?: number;
+        fixedStart?: number;
+        minEnd?: number;
+        maxEnd?: number;
+      }
+    | null
+  >(null);
   const clipDragRef = useRef<
     | {
         region: Region;
@@ -107,7 +120,9 @@ export function WaveformCanvas() {
   const [isPanning, setIsPanning] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const [draggedTrackId, setDraggedTrackId] = useState<WaveformTrackId | null>(null);
-  const [draggedClipStart, setDraggedClipStart] = useState<number | null>(null);
+  const [draftClipPlacement, setDraftClipPlacement] = useState<
+    { start: number; length: number } | null
+  >(null);
   const [trackOrder, setTrackOrder] = useState<WaveformTrackId[]>(DEFAULT_TRACK_ORDER);
   const [visibleLayers, setVisibleLayers] = useState<Array<"original" | "remastered" | "diff">>([
     "original",
@@ -184,6 +199,7 @@ export function WaveformCanvas() {
   const timelineTop = innerHeight + axisHeight;
   const timelineBlockTop = timelineTop + 16;
   const timelineBlockHeight = Math.max(8, timelineHeight - 20);
+  const clipHandleWidth = 10;
   const selectionHandleWidth = 10;
   const scrollContentWidth =
     width > 0 ? Math.max(width + 1, Math.round(width / zoomRange)) : 0;
@@ -415,15 +431,15 @@ export function WaveformCanvas() {
 
     return effect.regions
       .map((region) => {
-        const timelineStart =
-          draggedClipStart !== null && selectedClip?.id === region.id
-            ? draggedClipStart
-            : region.timelineStart;
-        const timelineEnd = timelineStart + getRegionLength(region);
+        const isDraft = draftClipPlacement !== null && selectedClip?.id === region.id;
+        const timelineStart = isDraft
+          ? draftClipPlacement.start
+          : region.timelineStart;
+        const timelineEnd = timelineStart + (isDraft ? draftClipPlacement.length : getRegionLength(region));
         return { region, timelineStart, timelineEnd };
       })
       .sort((left, right) => left.timelineStart - right.timelineStart);
-  }, [draggedClipStart, effect, selectedClip?.id]);
+  }, [draftClipPlacement, effect, selectedClip?.id]);
 
   const waveformTracks = useMemo(() => {
     return activeTrackIds.map((trackId, index) => {
@@ -592,6 +608,7 @@ export function WaveformCanvas() {
     const target = event.target as Element | null;
     const selectionHandle = target?.closest("[data-selection-handle]");
     const selectionBody = target?.closest("[data-selection-body]");
+    const clipHandle = target?.closest("[data-clip-handle][data-clip-id]");
     const clipTarget = target?.closest("[data-clip-lane-hit][data-clip-id]");
 
     if (event.button === 0 && selectionRange && selectionHandle) {
@@ -627,6 +644,55 @@ export function WaveformCanvas() {
 
     if (
       event.button === 0 &&
+      clipHandle &&
+      selectedClipEntry &&
+      clipHandle.getAttribute("data-clip-id") === selectedClipEntry.region.id
+    ) {
+      const mode = clipHandle.getAttribute("data-clip-handle");
+      const index = timelineRegions.findIndex(
+        (timelineRegion) => timelineRegion.region.id === selectedClipEntry.region.id,
+      );
+      const previousRegion = index > 0 ? timelineRegions[index - 1] : null;
+      const nextRegion =
+        index >= 0 && index < timelineRegions.length - 1
+          ? timelineRegions[index + 1]
+          : null;
+      const clipLength = getRegionLength(selectedClipEntry.region);
+      const fixedStart = selectedClipEntry.timelineStart;
+      const fixedEnd = fixedStart + clipLength;
+
+      if (mode === "start") {
+        clipStretchRef.current = {
+          mode: "start",
+          region: selectedClipEntry.region,
+          startClientX: event.clientX,
+          minStart: previousRegion ? previousRegion.timelineEnd : 0,
+          maxStart: fixedEnd - 1,
+        };
+      } else if (mode === "end") {
+        clipStretchRef.current = {
+          mode: "end",
+          region: selectedClipEntry.region,
+          startClientX: event.clientX,
+          fixedStart,
+          minEnd: fixedStart + 1,
+          maxEnd: nextRegion
+            ? nextRegion.timelineStart
+            : effect.waveform.samples.length,
+        };
+      }
+
+      setDraftClipPlacement({ start: fixedStart, length: clipLength });
+      suppressClickRef.current = false;
+      setSelectionRange(null);
+      setDragTooltip(null);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
+    if (
+      event.button === 0 &&
       clipTarget &&
       selectedClipEntry &&
       clipTarget.getAttribute("data-clip-id") === selectedClipEntry.region.id
@@ -649,7 +715,10 @@ export function WaveformCanvas() {
           ? nextRegion.timelineStart - clipLength
           : Math.max(0, effect.waveform.samples.length - clipLength),
       };
-      setDraggedClipStart(selectedClipEntry.timelineStart);
+      setDraftClipPlacement({
+        start: selectedClipEntry.timelineStart,
+        length: clipLength,
+      });
       suppressClickRef.current = false;
       setSelectionRange(null);
       setDragTooltip(null);
@@ -730,6 +799,50 @@ export function WaveformCanvas() {
       return;
     }
 
+    const clipStretch = clipStretchRef.current;
+    if (clipStretch) {
+      const visibleSpan = Math.max(1, endSample - startSample);
+      const deltaX = event.clientX - clipStretch.startClientX;
+      const deltaSamples = Math.round(
+        (deltaX / Math.max(1, innerWidth)) * visibleSpan,
+      );
+
+      if (Math.abs(deltaX) > 3) {
+        suppressClickRef.current = true;
+      }
+
+      if (clipStretch.mode === "start") {
+        const nextStart = Math.max(
+          clipStretch.minStart ?? 0,
+          Math.min(
+            clipStretch.region.timelineStart + deltaSamples,
+            clipStretch.maxStart ?? clipStretch.region.timelineStart,
+          ),
+        );
+        const fixedEnd =
+          clipStretch.region.timelineStart + getRegionLength(clipStretch.region);
+        setDraftClipPlacement({
+          start: nextStart,
+          length: fixedEnd - nextStart,
+        });
+        return;
+      }
+
+      const nextEnd = Math.max(
+        clipStretch.minEnd ?? 1,
+        Math.min(
+          clipStretch.region.timelineStart + getRegionLength(clipStretch.region) + deltaSamples,
+          clipStretch.maxEnd ?? effect.waveform.samples.length,
+        ),
+      );
+      const fixedStart = clipStretch.fixedStart ?? clipStretch.region.timelineStart;
+      setDraftClipPlacement({
+        start: fixedStart,
+        length: nextEnd - fixedStart,
+      });
+      return;
+    }
+
     const clipDrag = clipDragRef.current;
     if (clipDrag) {
       const visibleSpan = Math.max(1, endSample - startSample);
@@ -746,7 +859,10 @@ export function WaveformCanvas() {
         clipDrag.minStart,
         Math.min(clipDrag.region.timelineStart + deltaSamples, clipDrag.maxStart),
       );
-      setDraggedClipStart(nextStart);
+      setDraftClipPlacement({
+        start: nextStart,
+        length: getRegionLength(clipDrag.region),
+      });
       return;
     }
 
@@ -823,21 +939,41 @@ export function WaveformCanvas() {
       selectionEditRef.current = null;
     }
 
+    if (clipStretchRef.current) {
+      if (
+        draftClipPlacement !== null &&
+        (draftClipPlacement.start !== clipStretchRef.current.region.timelineStart ||
+          draftClipPlacement.length !== getRegionLength(clipStretchRef.current.region))
+      ) {
+        dispatch({
+          type: "UPDATE_REGION",
+          region: {
+            ...clipStretchRef.current.region,
+            timelineStart: draftClipPlacement.start,
+            timelineLength: draftClipPlacement.length,
+          },
+        });
+      }
+      clipStretchRef.current = null;
+      setDraftClipPlacement(null);
+    }
+
     if (clipDragRef.current) {
       if (
-        draggedClipStart !== null &&
-        draggedClipStart !== clipDragRef.current.region.timelineStart
+        draftClipPlacement !== null &&
+        draftClipPlacement.start !== clipDragRef.current.region.timelineStart
       ) {
         dispatch({
           type: "UPDATE_REGION",
           region: {
             ...clipDragRef.current.region,
-            timelineStart: draggedClipStart,
+            timelineStart: draftClipPlacement.start,
+            timelineLength: draftClipPlacement.length,
           },
         });
       }
       clipDragRef.current = null;
-      setDraggedClipStart(null);
+      setDraftClipPlacement(null);
     }
 
     if (trackDragRef.current) {
@@ -1010,6 +1146,7 @@ export function WaveformCanvas() {
                 timelineHeight={timelineHeight}
                 timelineBlockTop={timelineBlockTop}
                 timelineBlockHeight={timelineBlockHeight}
+                clipHandleWidth={clipHandleWidth}
                 selectionHandleWidth={selectionHandleWidth}
                 timelineRegions={timelineRegions}
                 startSample={startSample}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
+import { getRegionLength, getRegionSourceLength } from "@/lib/dsp/region";
 import { createStudioEffectFromRegion } from "@/lib/studio-io";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,7 +19,10 @@ export function RegionEditor() {
   const selectedRegion =
     effect.regions.find((region) => region.id === state.selectedRegionId) ?? null;
   const selectedLength = selectedRegion
-    ? selectedRegion.end - selectedRegion.start
+    ? getRegionLength(selectedRegion)
+    : 0;
+  const selectedSourceLength = selectedRegion
+    ? getRegionSourceLength(selectedRegion)
     : 0;
   const selectedDurationMs = selectedRegion
     ? (selectedLength / effect.waveform.sampleRate) * 1000
@@ -87,15 +91,21 @@ export function RegionEditor() {
               </div>
               <div className="rounded-md border border-border p-2">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Transforms
+                  Timeline Length
                 </div>
-                <div className="tabular-nums">{selectedRegion.chain.length}</div>
+                <div className="tabular-nums">{selectedLength}</div>
               </div>
               <div className="rounded-md border border-border p-2">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Clip Id
+                  Source Length
                 </div>
-                <div className="tabular-nums">{selectedRegion.id.slice(0, 8)}</div>
+                <div className="tabular-nums">{selectedSourceLength}</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Transforms
+                </div>
+                <div className="tabular-nums">{selectedRegion.chain.length}</div>
               </div>
             </div>
 
@@ -137,7 +147,7 @@ export function RegionEditor() {
                     @{region.timelineStart}
                   </span>
                   <span className="ml-auto tabular-nums text-muted-foreground">
-                    {region.end - region.start} smp
+                    {getRegionLength(region)} smp
                   </span>
                 </button>
               ))}

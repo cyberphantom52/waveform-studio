@@ -274,6 +274,7 @@ export function createRegionSelection(
     id: crypto.randomUUID(),
     name: `Clip ${existingRegions.length + 1}`,
     timelineStart: safeStart,
+    timelineLength: safeEnd - safeStart,
     start: safeStart,
     end: safeEnd,
     crossfadeSamples: 0,
