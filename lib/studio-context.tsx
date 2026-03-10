@@ -11,6 +11,7 @@ import type { WaveformData, EffectMetadata } from "./dsp/waveform";
 import type { TransformStep, TransformType } from "./dsp/transforms";
 import { getDefaultParams } from "./dsp/transforms";
 import {
+  getRegionLength,
   getValidTimelineInsertion,
   type Region,
 } from "./dsp/region";
@@ -106,6 +107,7 @@ type Action =
     }
   | { type: "SET_VIEW_MODE"; mode: StudioState["viewMode"] }
   | { type: "SET_COMPARE_WAVEFORM"; waveform: WaveformData | null }
+  | { type: "SET_TIMELINE_LENGTH_SAMPLES"; sampleCount: number }
   | { type: "SET_ZOOM"; start: number; end: number }
   | { type: "ADD_REGION"; region: Region }
   | { type: "SET_REGIONS"; regions: Region[] }
@@ -162,6 +164,50 @@ function cloneWaveform(waveform: WaveformData): WaveformData {
     ...waveform,
     samples: new Int8Array(waveform.samples),
   };
+}
+
+function resizeSampleArray(samples: Int8Array, targetLength: number) {
+  const safeLength = Math.max(1, targetLength);
+  const resized = new Int8Array(safeLength);
+  resized.set(samples.slice(0, safeLength));
+  return resized;
+}
+
+function resizeEffectTimeline(effect: StudioEffect, targetLength: number) {
+  const safeLength = Math.max(1, targetLength);
+  const waveform = {
+    ...effect.waveform,
+    samples: resizeSampleArray(effect.waveform.samples, safeLength),
+  };
+  const regions = effect.regions
+    .map(cloneRegion)
+    .flatMap((region) => {
+      const regionStart = region.timelineStart;
+      if (regionStart >= safeLength) return [] as Region[];
+
+      const nextTimelineLength = Math.min(
+        getRegionLength(region),
+        safeLength - regionStart,
+      );
+      if (nextTimelineLength <= 0) return [] as Region[];
+
+      return [
+        {
+          ...region,
+          timelineLength: nextTimelineLength,
+          crossfadeSamples: Math.min(
+            region.crossfadeSamples,
+            Math.floor(nextTimelineLength / 2),
+          ),
+        },
+      ];
+    });
+
+  return recomputeRemaster({
+    ...effect,
+    waveform,
+    regions,
+  });
 }
 
 function insertEffectClipIntoTimeline(
@@ -615,6 +661,28 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return {
         ...s,
         compareWaveform: action.waveform ? cloneWaveform(action.waveform) : null,
+      };
+    }
+    case "SET_TIMELINE_LENGTH_SAMPLES": {
+      const s = pushUndo(state);
+      const effect = s.effects[s.activeEffectIndex];
+      if (!effect) return s;
+      const updated = resizeEffectTimeline(effect, action.sampleCount);
+      const effects = s.effects.map((entry, index) =>
+        index === s.activeEffectIndex ? updated : entry,
+      );
+      const selectedRegionExists = updated.regions.some(
+        (region) => region.id === s.selectedRegionId,
+      );
+      const selectedRegionId = selectedRegionExists
+        ? s.selectedRegionId
+        : updated.regions[0]?.id ?? null;
+      const chain = getChainTarget(updated, selectedRegionId);
+      return {
+        ...s,
+        effects,
+        selectedRegionId,
+        activeTransformIndex: chain.length > 0 ? 0 : -1,
       };
     }
     case "INSERT_EFFECT_CLIP": {

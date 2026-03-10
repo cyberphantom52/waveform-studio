@@ -205,7 +205,7 @@ export function WaveformCanvas() {
     left: 28,
   };
   const innerWidth = Math.max(0, width - margin.left - margin.right);
-  const innerHeight = Math.max(0, canvasHeight - margin.top - margin.bottom);
+  const plotBaseHeight = Math.max(0, canvasHeight - margin.top - margin.bottom);
   const effectiveVisibleLayers = useMemo(
     () =>
       state.compareWaveform
@@ -213,23 +213,29 @@ export function WaveformCanvas() {
         : visibleLayers.filter((layer) => layer !== "compare"),
     [state.compareWaveform, visibleLayers],
   );
+  const showOriginalLayer = effectiveVisibleLayers.includes("original");
+  const showRemasteredLayer = effectiveVisibleLayers.includes("remastered");
+  const showCompareLayer =
+    effectiveVisibleLayers.includes("compare") && compare.length > 0;
+  const showMainTrack =
+    showOriginalLayer || showRemasteredLayer || showCompareLayer;
+  const showDiffTrack = effectiveVisibleLayers.includes("diff");
   const effectiveTrackOrder = normalizeTrackOrder(trackOrder as string[]);
   const activeTrackIds = effectiveTrackOrder.filter((trackId) =>
-    trackId === "main"
-      ? effectiveVisibleLayers.includes("original") ||
-        effectiveVisibleLayers.includes("remastered") ||
-        effectiveVisibleLayers.includes("compare")
-      : effectiveVisibleLayers.includes("diff"),
+    trackId === "main" ? showMainTrack : showDiffTrack,
   );
-  const trackGap = activeTrackIds.length > 1 ? 12 : 0;
-  const perTrackHeight =
-    activeTrackIds.length > 0
-      ? Math.max(
-          56,
-          Math.floor((innerHeight - trackGap * (activeTrackIds.length - 1)) / activeTrackIds.length),
-        )
-      : innerHeight;
+  const diffTrackGap = showMainTrack && showDiffTrack ? 12 : 0;
+  const mainTrackHeight = showMainTrack ? plotBaseHeight : 0;
+  const diffTrackHeight = showDiffTrack
+    ? showMainTrack
+      ? mainTrackHeight
+      : plotBaseHeight
+    : 0;
+  const innerHeight =
+    (showMainTrack ? mainTrackHeight : 0) + diffTrackGap + diffTrackHeight;
+  const diffTrackTop = showMainTrack ? mainTrackHeight + diffTrackGap : 0;
   const timelineTop = innerHeight + axisHeight;
+  const renderCanvasHeight = margin.top + innerHeight + margin.bottom;
   const timelineBlockTop = timelineTop + 16;
   const timelineBlockHeight = Math.max(8, timelineHeight - 20);
   const clipHandleWidth = 10;
@@ -399,48 +405,48 @@ export function WaveformCanvas() {
       pathFromSamples(
         visibleOriginal,
         innerWidth,
-        perTrackHeight,
+        mainTrackHeight,
         -128,
         127,
         state.canvasConfig.density,
       ),
-    [visibleOriginal, innerWidth, perTrackHeight, state.canvasConfig.density],
+    [visibleOriginal, innerWidth, mainTrackHeight, state.canvasConfig.density],
   );
   const comparePath = useMemo(
     () =>
       pathFromSamples(
         visibleCompare,
         innerWidth,
-        perTrackHeight,
+        mainTrackHeight,
         -128,
         127,
         state.canvasConfig.density,
       ),
-    [visibleCompare, innerWidth, perTrackHeight, state.canvasConfig.density],
+    [visibleCompare, innerWidth, mainTrackHeight, state.canvasConfig.density],
   );
   const remasteredPath = useMemo(
     () =>
       pathFromSamples(
         visibleRemastered,
         innerWidth,
-        perTrackHeight,
+        mainTrackHeight,
         -128,
         127,
         state.canvasConfig.density,
       ),
-    [visibleRemastered, innerWidth, perTrackHeight, state.canvasConfig.density],
+    [visibleRemastered, innerWidth, mainTrackHeight, state.canvasConfig.density],
   );
   const diffPath = useMemo(
     () =>
       pathFromSamples(
         visibleDiff,
         innerWidth,
-        perTrackHeight,
+        diffTrackHeight,
         -255,
         255,
         state.canvasConfig.density,
       ),
-    [visibleDiff, innerWidth, perTrackHeight, state.canvasConfig.density],
+    [visibleDiff, diffTrackHeight, innerWidth, state.canvasConfig.density],
   );
 
   const timelineRegions = useMemo(() => {
@@ -463,16 +469,13 @@ export function WaveformCanvas() {
   }, [draftClipPlacement, effect, selectedClip?.id]);
 
   const waveformTracks = useMemo(() => {
-    return activeTrackIds.map((trackId, index) => {
-      const top = index * (perTrackHeight + trackGap);
+    return [...activeTrackIds]
+      .sort((left, right) => (left === right ? 0 : left === "main" ? -1 : 1))
+      .map((trackId) => {
 
       if (trackId === "main") {
-        const showOriginal = effectiveVisibleLayers.includes("original");
-        const showRemastered = effectiveVisibleLayers.includes("remastered");
-        const showCompare =
-          effectiveVisibleLayers.includes("compare") && compare.length > 0;
         const lineLayers = [
-          showRemastered
+          showRemasteredLayer
             ? {
                 path: remasteredPath,
                 stroke: "var(--waveform-remastered)",
@@ -480,15 +483,15 @@ export function WaveformCanvas() {
                 opacity: 1,
               }
             : null,
-          showOriginal
+          showOriginalLayer
             ? {
                 path: originalPath,
                 stroke: "var(--waveform-original)",
-                strokeWidth: showRemastered ? 1 : 1.1,
-                opacity: showRemastered ? 0.45 : 1,
+                strokeWidth: showRemasteredLayer ? 1 : 1.1,
+                opacity: showRemasteredLayer ? 0.45 : 1,
               }
             : null,
-          showCompare
+          showCompareLayer
             ? {
                 path: comparePath,
                 stroke: "var(--chart-3)",
@@ -500,7 +503,11 @@ export function WaveformCanvas() {
         const [primary, secondary, tertiary] = lineLayers;
         return {
           id: trackId,
-          label: [showOriginal ? "OG" : null, showRemastered ? "RM" : null, showCompare ? "CMP" : null]
+          label: [
+            showOriginalLayer ? "OG" : null,
+            showRemasteredLayer ? "RM" : null,
+            showCompareLayer ? "CMP" : null,
+          ]
             .filter((item): item is string => item !== null)
             .join("/"),
           minValue: -128,
@@ -518,7 +525,8 @@ export function WaveformCanvas() {
           tertiaryStrokeWidth: tertiary?.strokeWidth,
           tertiaryOpacity: tertiary?.opacity,
           ticks: [-128, -64, 0, 64, 127],
-          top,
+          top: 0,
+          height: mainTrackHeight,
         };
       }
 
@@ -532,7 +540,8 @@ export function WaveformCanvas() {
         strokeWidth: 1.25,
         opacity: 1,
         ticks: undefined,
-        top,
+        top: showMainTrack ? diffTrackTop : 0,
+        height: diffTrackHeight,
         backgroundFill: "var(--muted)",
         backgroundOpacity: 0.18,
         backgroundRadius: 6,
@@ -543,14 +552,17 @@ export function WaveformCanvas() {
     });
   }, [
     activeTrackIds,
-    compare.length,
     comparePath,
     diffPath,
+    diffTrackHeight,
+    diffTrackTop,
+    mainTrackHeight,
     originalPath,
-    perTrackHeight,
     remasteredPath,
-    trackGap,
-    effectiveVisibleLayers,
+    showCompareLayer,
+    showMainTrack,
+    showOriginalLayer,
+    showRemasteredLayer,
   ]);
 
   const selectedClipEntry =
@@ -856,19 +868,14 @@ export function WaveformCanvas() {
     if (trackDrag) {
       const bounds = event.currentTarget.getBoundingClientRect();
       const relativeY = event.clientY - bounds.top - margin.top;
-      const targetIndex = activeTrackIds.findIndex((trackId, index) => {
-        const top = index * (perTrackHeight + trackGap);
-        return relativeY >= top && relativeY <= top + perTrackHeight;
-      });
+      const targetIndex = waveformTracks.findIndex(
+        (track) =>
+          relativeY >= track.top &&
+          relativeY <= track.top + (track.height ?? innerHeight),
+      );
 
       if (targetIndex >= 0) {
-        const currentVisibleOrder = effectiveTrackOrder.filter((trackId) =>
-          trackId === "main"
-            ? effectiveVisibleLayers.includes("original") ||
-              effectiveVisibleLayers.includes("remastered") ||
-              effectiveVisibleLayers.includes("compare")
-            : effectiveVisibleLayers.includes("diff"),
-        );
+        const currentVisibleOrder = waveformTracks.map((track) => track.id);
         const currentIndex = currentVisibleOrder.indexOf(trackDrag.trackId);
         if (currentIndex !== targetIndex) {
           const nextVisibleOrder = [...currentVisibleOrder];
@@ -1134,7 +1141,7 @@ export function WaveformCanvas() {
         ) : (
           <svg
             width={width}
-            height={canvasHeight}
+            height={renderCanvasHeight}
             className={isPanning ? "block cursor-grabbing" : isCursorDragging ? "block cursor-crosshair" : "block"}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -1148,7 +1155,7 @@ export function WaveformCanvas() {
                   key={track.id}
                   trackId={track.id}
                   width={innerWidth}
-                  height={perTrackHeight}
+                  height={track.height}
                   top={track.top}
                   minValue={track.minValue}
                   maxValue={track.maxValue}

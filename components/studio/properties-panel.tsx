@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getTimelineLength } from "@/lib/dsp/region";
 import { useMemo, useState } from "react";
 
 export function PropertiesPanel() {
@@ -14,12 +15,53 @@ export function PropertiesPanel() {
   const dispatch = useStudioDispatch();
   const effect = state.effects[state.activeEffectIndex];
   const [presetName, setPresetName] = useState("");
+  const [isEditingDuration, setIsEditingDuration] = useState(false);
+  const [durationMsInput, setDurationMsInput] = useState("");
   const currentFamilyTag = effect?.familyTag.trim() || "ungrouped";
   const familyPresets = useMemo(
     () =>
       state.presets.filter((preset) => preset.familyTag === currentFamilyTag),
     [currentFamilyTag, state.presets],
   );
+  const timelineSampleCount = effect
+    ? Math.max(
+        effect.waveform.samples.length,
+        getTimelineLength(effect.regions, effect.waveform.samples.length),
+      )
+    : 0;
+  const currentDurationMs =
+    effect && effect.playRateHz > 0
+      ? (timelineSampleCount / effect.playRateHz) * 1000
+      : 0;
+
+  const currentDurationText =
+    currentDurationMs >= 100
+      ? currentDurationMs.toFixed(0)
+      : currentDurationMs >= 10
+        ? currentDurationMs.toFixed(1)
+        : currentDurationMs.toFixed(2);
+
+  const commitDurationMs = () => {
+    if (!effect) return;
+    const nextDurationMs = Number(durationMsInput || currentDurationText);
+    const fallbackText = currentDurationText;
+    if (!Number.isFinite(nextDurationMs) || nextDurationMs <= 0) {
+      setDurationMsInput(fallbackText);
+      setIsEditingDuration(false);
+      return;
+    }
+
+    const nextTimelineSampleCount = Math.max(
+      1,
+      Math.round((effect.playRateHz * nextDurationMs) / 1000),
+    );
+
+    dispatch({
+      type: "SET_TIMELINE_LENGTH_SAMPLES",
+      sampleCount: nextTimelineSampleCount,
+    });
+    setIsEditingDuration(false);
+  };
 
   if (!effect) {
     return (
@@ -67,6 +109,37 @@ export function PropertiesPanel() {
 
           <div className="px-2">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Duration
+            </span>
+            <Input
+              className="mt-1 h-8"
+              type="number"
+              min={0.01}
+              step={0.01}
+              value={isEditingDuration ? durationMsInput : currentDurationText}
+              onFocus={() => {
+                setIsEditingDuration(true);
+                setDurationMsInput(currentDurationText);
+              }}
+              onChange={(event) => setDurationMsInput(event.target.value)}
+              onBlur={commitDurationMs}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setDurationMsInput(currentDurationText);
+                  setIsEditingDuration(false);
+                  return;
+                }
+                
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                commitDurationMs();
+              }}
+            />
+          </div>
+
+          <div className="px-2">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Play Rate
             </span>
             <Input
@@ -88,23 +161,6 @@ export function PropertiesPanel() {
             />
           </div>
 
-          <div className="px-2">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Global Default Play Rate
-            </span>
-            <Input
-              className="mt-1 h-8"
-              type="number"
-              min={1}
-              value={state.globalDefaultPlayRateHz}
-              onChange={(event) =>
-                dispatch({
-                  type: "SET_GLOBAL_DEFAULT_PLAY_RATE",
-                  playRateHz: Number(event.target.value) || 24000,
-                })
-              }
-            />
-          </div>
 
           <div className="flex items-center justify-between px-2">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
