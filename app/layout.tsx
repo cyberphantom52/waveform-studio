@@ -21,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistMono.variable} font-mono antialiased`}>
+      <body suppressHydrationWarning className={`${geistMono.variable} font-mono antialiased`}>
         <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>

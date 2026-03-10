@@ -175,48 +175,45 @@ export function Plot({
       )}
 
       {path && (
-        <g
-          clipPath={`url(#${clipId})`}
-          transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}
-        >
-          <path
-            d={path}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={strokeWidth}
-            opacity={opacity}
-          />
+        <g clipPath={`url(#${clipId})`}>
+          <g transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}>
+            <path
+              d={path}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              opacity={opacity}
+            />
+          </g>
         </g>
       )}
 
       {secondaryPath && secondaryStroke && (
-        <g
-          clipPath={`url(#${clipId})`}
-          transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}
-        >
-          <path
-            d={secondaryPath}
-            fill="none"
-            stroke={secondaryStroke}
-            strokeWidth={secondaryStrokeWidth}
-            opacity={secondaryOpacity}
-          />
+        <g clipPath={`url(#${clipId})`}>
+          <g transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}>
+            <path
+              d={secondaryPath}
+              fill="none"
+              stroke={secondaryStroke}
+              strokeWidth={secondaryStrokeWidth}
+              opacity={secondaryOpacity}
+            />
+          </g>
         </g>
       )}
 
 
       {tertiaryPath && tertiaryStroke && (
-        <g
-          clipPath={`url(#${clipId})`}
-          transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}
-        >
-          <path
-            d={tertiaryPath}
-            fill="none"
-            stroke={tertiaryStroke}
-            strokeWidth={tertiaryStrokeWidth}
-            opacity={tertiaryOpacity}
-          />
+        <g clipPath={`url(#${clipId})`}>
+          <g transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}>
+            <path
+              d={tertiaryPath}
+              fill="none"
+              stroke={tertiaryStroke}
+              strokeWidth={tertiaryStrokeWidth}
+              opacity={tertiaryOpacity}
+            />
+          </g>
         </g>
       )}
     </g>

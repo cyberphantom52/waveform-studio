@@ -89,14 +89,12 @@ function pathFromSamples(
   const step = Math.max(1, Math.ceil(samples.length / maxPoints));
   const points: string[] = [];
   const valueRange = maxValue - minValue || 1;
-  const verticalPadding = Math.min(height * 0.08, 12);
-  const drawableHeight = Math.max(0, height - verticalPadding * 2);
 
   for (let index = 0; index < samples.length; index += step) {
     const sample = samples[index];
     const x = (index / Math.max(1, samples.length - 1)) * width;
     const normalized = (sample - minValue) / valueRange;
-    const y = verticalPadding + (1 - normalized) * drawableHeight;
+    const y = height - normalized * height;
     points.push(
       `${points.length === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`,
     );
