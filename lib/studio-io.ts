@@ -34,6 +34,8 @@ export function createStudioEffect(
     metadata,
     familyTag: metadata?.family ?? "ungrouped",
     playRateHz: metadata?.playRateHz ?? globalDefaultPlayRateHz,
+    zoom: { start: 0, end: 1 },
+    verticalZoom: 1,
     notes: "",
     selected: false,
     remasterInfo: null,

@@ -37,6 +37,7 @@ export interface FamilyPreset {
 export interface CanvasConfig {
   height: number;
   density: number;
+  verticalZoom: number;
 }
 
 export interface StudioEffect {
@@ -47,6 +48,8 @@ export interface StudioEffect {
   metadata?: EffectMetadata;
   familyTag: string;
   playRateHz: number;
+  zoom: { start: number; end: number };
+  verticalZoom: number;
   notes: string;
   selected: boolean;
   remasterInfo: EffectRemasterInfo | null;
@@ -284,6 +287,8 @@ function cloneEffect(effect: StudioEffect): StudioEffect {
     metadata: effect.metadata ? { ...effect.metadata } : undefined,
     familyTag: effect.familyTag,
     playRateHz: effect.playRateHz,
+    zoom: { ...effect.zoom },
+    verticalZoom: effect.verticalZoom,
     notes: effect.notes,
     selected: effect.selected,
     remasterInfo: effect.remasterInfo
@@ -406,6 +411,10 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         activeEffectIndex: effects.length - 1,
         activeTransformIndex: -1,
         zoom: { start: 0, end: 1 },
+        canvasConfig: {
+          ...s.canvasConfig,
+          verticalZoom: effects.at(-1)?.verticalZoom ?? 1,
+        },
         selectedRegionId,
       };
     }
@@ -420,6 +429,10 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         activeEffectIndex: effects.length - 1,
         activeTransformIndex: -1,
         zoom: { start: 0, end: 1 },
+        canvasConfig: {
+          ...s.canvasConfig,
+          verticalZoom: effects.at(-1)?.verticalZoom ?? 1,
+        },
         selectedRegionId,
       };
     }
@@ -439,6 +452,13 @@ function studioReducer(state: StudioState, action: Action): StudioState {
         activeEffectIndex: effects.length === 0 ? -1 : activeEffectIndex,
         activeTransformIndex:
           effects.length === 0 ? -1 : s.activeTransformIndex,
+        canvasConfig: {
+          ...s.canvasConfig,
+          verticalZoom:
+            effects.length === 0
+              ? 1
+              : effects[activeEffectIndex]?.verticalZoom ?? s.canvasConfig.verticalZoom,
+        },
         selectedRegionId: null,
       };
     }
@@ -459,6 +479,14 @@ function studioReducer(state: StudioState, action: Action): StudioState {
             : Math.min(s.activeEffectIndex, effects.length - 1),
         activeTransformIndex:
           effects.length === 0 ? -1 : s.activeTransformIndex,
+        canvasConfig: {
+          ...s.canvasConfig,
+          verticalZoom:
+            effects.length === 0
+              ? 1
+              : effects[Math.min(s.activeEffectIndex, effects.length - 1)]?.verticalZoom ??
+                s.canvasConfig.verticalZoom,
+        },
         selectedRegionId: null,
       };
     }
@@ -471,6 +499,11 @@ function studioReducer(state: StudioState, action: Action): StudioState {
           ...state,
           activeEffectIndex: action.index,
           activeTransformIndex: chain.length > 0 ? 0 : -1,
+          zoom: effect?.zoom ?? { start: 0, end: 1 },
+          canvasConfig: {
+            ...state.canvasConfig,
+            verticalZoom: effect?.verticalZoom ?? 1,
+          },
           selectedRegionId,
         };
       }
@@ -709,7 +742,15 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       };
     }
     case "SET_ZOOM":
-      return { ...state, zoom: clampZoomWindow(action.start, action.end) };
+      {
+        const nextZoom = clampZoomWindow(action.start, action.end);
+        const effects = state.effects.map((effect, index) =>
+          index === state.activeEffectIndex
+            ? { ...effect, zoom: nextZoom }
+            : effect,
+        );
+        return { ...state, effects, zoom: nextZoom };
+      }
     case "ADD_REGION": {
       const s = pushUndo(state);
       const effect = s.effects[s.activeEffectIndex];
@@ -823,10 +864,22 @@ function studioReducer(state: StudioState, action: Action): StudioState {
       return { ...state, effects, families: buildFamilies(effects) };
     }
     case "SET_CANVAS_CONFIG":
-      return {
-        ...state,
-        canvasConfig: { ...state.canvasConfig, ...action.config },
-      };
+      {
+        const canvasConfig = { ...state.canvasConfig, ...action.config };
+        const effects =
+          action.config.verticalZoom === undefined
+            ? state.effects
+            : state.effects.map((effect, index) =>
+                index === state.activeEffectIndex
+                  ? { ...effect, verticalZoom: canvasConfig.verticalZoom }
+                  : effect,
+              );
+        return {
+          ...state,
+          effects,
+          canvasConfig,
+        };
+      }
     case "SET_GLOBAL_DEFAULT_PLAY_RATE":
       return { ...state, globalDefaultPlayRateHz: action.playRateHz };
     case "SAVE_PRESET": {
@@ -886,6 +939,7 @@ const initialState: StudioState = {
   canvasConfig: {
     height: 320,
     density: 1,
+    verticalZoom: 1,
   },
   globalDefaultPlayRateHz: 24000,
   undoStack: [],

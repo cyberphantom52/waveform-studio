@@ -52,6 +52,30 @@ function normalizeTrackOrder(trackOrder: string[]): WaveformTrackId[] {
   return normalized;
 }
 
+function getZoomedValueRange(
+  minValue: number,
+  maxValue: number,
+  zoom: number,
+) {
+  const center = (minValue + maxValue) / 2;
+  const range = Math.max(1, maxValue - minValue);
+  const clampedZoom = Math.max(0.25, Math.min(zoom, 8));
+  const nextRange = range / clampedZoom;
+  return {
+    min: center - nextRange / 2,
+    max: center + nextRange / 2,
+  };
+}
+
+function buildScaleTicks(minValue: number, maxValue: number, count = 5) {
+  if (count <= 1) return [Number(minValue.toFixed(1))];
+  const step = (maxValue - minValue) / (count - 1);
+  const digits = Math.abs(maxValue - minValue) >= 20 ? 0 : 1;
+  return Array.from({ length: count }, (_, index) =>
+    Number((minValue + step * index).toFixed(digits)),
+  );
+}
+
 function pathFromSamples(
   samples: ArrayLike<number>,
   width: number,
@@ -256,6 +280,21 @@ export function WaveformCanvas() {
           ? event.deltaX
           : event.deltaY;
 
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        if (dominantDelta === 0) return;
+        event.preventDefault();
+        const zoomFactor = Math.exp(dominantDelta * 0.0025);
+        const nextVerticalZoom = Math.max(
+          0.25,
+          Math.min(8, state.canvasConfig.verticalZoom / zoomFactor),
+        );
+        dispatch({
+          type: "SET_CANVAS_CONFIG",
+          config: { verticalZoom: nextVerticalZoom },
+        });
+        return;
+      }
+
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
 
@@ -265,7 +304,7 @@ export function WaveformCanvas() {
           innerWidth,
         );
         const anchor = innerWidth > 0 ? relativeX / innerWidth : 0.5;
-        const zoomFactor = Math.exp(event.deltaY * 0.0025);
+        const zoomFactor = Math.exp(dominantDelta * 0.0025);
         const nextZoom = scaleZoomWindow(
           state.zoom,
           zoomFactor,
@@ -281,7 +320,16 @@ export function WaveformCanvas() {
 
     element.addEventListener("wheel", handleWheel, { passive: false });
     return () => element.removeEventListener("wheel", handleWheel);
-  }, [dispatch, effect, innerWidth, margin.left, minZoomRange, state.zoom, zoomRange]);
+  }, [
+    dispatch,
+    effect,
+    innerWidth,
+    margin.left,
+    minZoomRange,
+    state.canvasConfig.verticalZoom,
+    state.zoom,
+    zoomRange,
+  ]);
 
 
   useEffect(() => {
@@ -401,17 +449,37 @@ export function WaveformCanvas() {
     return Math.max(0, Math.min(sample, baseLength));
   };
 
+  const mainValueRange = useMemo(
+    () => getZoomedValueRange(-128, 127, state.canvasConfig.verticalZoom),
+    [state.canvasConfig.verticalZoom],
+  );
+  const diffValueRange = useMemo(
+    () => getZoomedValueRange(-255, 255, state.canvasConfig.verticalZoom),
+    [state.canvasConfig.verticalZoom],
+  );
+  const mainTicks = useMemo(
+    () => buildScaleTicks(mainValueRange.min, mainValueRange.max),
+    [mainValueRange.max, mainValueRange.min],
+  );
+
   const originalPath = useMemo(
     () =>
       pathFromSamples(
         visibleOriginal,
         innerWidth,
         mainTrackHeight,
-        -128,
-        127,
+        mainValueRange.min,
+        mainValueRange.max,
         state.canvasConfig.density,
       ),
-    [visibleOriginal, innerWidth, mainTrackHeight, state.canvasConfig.density],
+    [
+      visibleOriginal,
+      innerWidth,
+      mainTrackHeight,
+      mainValueRange.max,
+      mainValueRange.min,
+      state.canvasConfig.density,
+    ],
   );
   const comparePath = useMemo(
     () =>
@@ -419,11 +487,18 @@ export function WaveformCanvas() {
         visibleCompare,
         innerWidth,
         mainTrackHeight,
-        -128,
-        127,
+        mainValueRange.min,
+        mainValueRange.max,
         state.canvasConfig.density,
       ),
-    [visibleCompare, innerWidth, mainTrackHeight, state.canvasConfig.density],
+    [
+      visibleCompare,
+      innerWidth,
+      mainTrackHeight,
+      mainValueRange.max,
+      mainValueRange.min,
+      state.canvasConfig.density,
+    ],
   );
   const remasteredPath = useMemo(
     () =>
@@ -431,11 +506,18 @@ export function WaveformCanvas() {
         visibleRemastered,
         innerWidth,
         mainTrackHeight,
-        -128,
-        127,
+        mainValueRange.min,
+        mainValueRange.max,
         state.canvasConfig.density,
       ),
-    [visibleRemastered, innerWidth, mainTrackHeight, state.canvasConfig.density],
+    [
+      visibleRemastered,
+      innerWidth,
+      mainTrackHeight,
+      mainValueRange.max,
+      mainValueRange.min,
+      state.canvasConfig.density,
+    ],
   );
   const diffPath = useMemo(
     () =>
@@ -443,11 +525,18 @@ export function WaveformCanvas() {
         visibleDiff,
         innerWidth,
         diffTrackHeight,
-        -255,
-        255,
+        diffValueRange.min,
+        diffValueRange.max,
         state.canvasConfig.density,
       ),
-    [visibleDiff, diffTrackHeight, innerWidth, state.canvasConfig.density],
+    [
+      visibleDiff,
+      diffTrackHeight,
+      diffValueRange.max,
+      diffValueRange.min,
+      innerWidth,
+      state.canvasConfig.density,
+    ],
   );
 
   const timelineRegions = useMemo(() => {
@@ -511,8 +600,8 @@ export function WaveformCanvas() {
           ]
             .filter((item): item is string => item !== null)
             .join("/"),
-          minValue: -128,
-          maxValue: 127,
+          minValue: mainValueRange.min,
+          maxValue: mainValueRange.max,
           path: primary?.path,
           stroke: primary?.stroke ?? "var(--waveform-original)",
           strokeWidth: primary?.strokeWidth ?? 1,
@@ -525,7 +614,7 @@ export function WaveformCanvas() {
           tertiaryStroke: tertiary?.stroke,
           tertiaryStrokeWidth: tertiary?.strokeWidth,
           tertiaryOpacity: tertiary?.opacity,
-          ticks: [-128, -64, 0, 64, 127],
+          ticks: mainTicks,
           top: 0,
           height: mainTrackHeight,
         };
@@ -534,8 +623,8 @@ export function WaveformCanvas() {
       return {
         id: trackId,
         label: "DF",
-        minValue: -255,
-        maxValue: 255,
+        minValue: diffValueRange.min,
+        maxValue: diffValueRange.max,
         path: diffPath,
         stroke: "var(--waveform-delta)",
         strokeWidth: 1.25,
@@ -557,7 +646,12 @@ export function WaveformCanvas() {
     diffPath,
     diffTrackHeight,
     diffTrackTop,
+    diffValueRange.max,
+    diffValueRange.min,
     mainTrackHeight,
+    mainTicks,
+    mainValueRange.max,
+    mainValueRange.min,
     originalPath,
     remasteredPath,
     showCompareLayer,

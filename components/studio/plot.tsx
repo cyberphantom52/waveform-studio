@@ -31,7 +31,7 @@ interface PlotProps {
 const PLOT_PADDING_Y = 6;
 const SCALE_GUTTER_WIDTH = 24;
 const PLOT_RIGHT_PADDING = 6;
-const PLOT_CLIP_BLEED_Y = 1000;
+const PLOT_CLIP_BLEED_Y = 2;
 
 function yForValue(
   value: number,
