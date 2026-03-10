@@ -55,8 +55,7 @@ function TrackBadge({ label, x, y, width }: { label: string; x: number; y: numbe
         y={0}
         width={badgeWidth}
         height={badgeHeight}
-        rx={4} // Consistent Shadcn radius
-        fill="var(--secondary)" // Shadcn's neutral 'secondary' background
+        fill="var(--secondary)"
         stroke="var(--border)"
         strokeWidth={1}
       />
@@ -126,9 +125,8 @@ export function WaveformTrack({
         height={height}
         fill={backgroundFill}
         opacity={backgroundOpacity}
-        stroke={showTrackHighlight ? "var(--ring)" : "transparent"} // Highlighting uses the focus ring color
+        stroke={showTrackHighlight ? "var(--ring)" : "transparent"}
         strokeWidth={showTrackHighlight ? 1 : 0}
-        rx={8} // Card border radius effect
         className="transition-colors duration-200"
       />
 
@@ -141,7 +139,6 @@ export function WaveformTrack({
           height={height}
           fill="var(--accent)"
           opacity={0.15}
-          rx={8}
           pointerEvents="none"
         />
       )}

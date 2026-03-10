@@ -220,7 +220,7 @@ export function WaveformCanvas() {
   const visibleDiff = computeDelta(visibleOriginal, visibleRemastered);
 
   const axisHeight = 26;
-  const timelineHeight = 38;
+  const timelineHeight = 56;
   const margin = {
     top: 12,
     right: 8,
@@ -259,9 +259,9 @@ export function WaveformCanvas() {
   const diffTrackTop = showMainTrack ? mainTrackHeight + diffTrackGap : 0;
   const timelineTop = innerHeight + axisHeight;
   const renderCanvasHeight = margin.top + innerHeight + margin.bottom;
-  const timelineBlockTop = timelineTop + 16;
-  const timelineBlockHeight = Math.max(8, timelineHeight - 20);
-  const clipHandleWidth = 10;
+  const timelineBlockTop = timelineTop + 14;
+  const timelineBlockHeight = 28;
+  const clipHandleWidth = 12;
   const scrollContentWidth =
     width > 0 ? Math.max(width + 1, Math.round(width / zoomRange)) : 0;
   const maxScrollLeft = Math.max(0, scrollContentWidth - width);
@@ -1321,16 +1321,6 @@ export function WaveformCanvas() {
                 }}
               />
 
-              <text
-                x={6}
-                y={timelineTop + 10}
-                fill="var(--muted-foreground)"
-                fontSize="10"
-                fontFamily="var(--font-mono)"
-                fontWeight="500"
-              >
-                CLIPS
-              </text>
 
               {visibleCursorX !== null && (
                 <line

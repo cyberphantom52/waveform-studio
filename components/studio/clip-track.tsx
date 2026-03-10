@@ -41,16 +41,25 @@ export function ClipTrack({
 }: ClipTrackProps) {
   return (
     <>
+      {/* Lane background — subtle tint to separate from waveform */}
       <rect
         x={0}
         y={timelineTop}
         width={innerWidth}
         height={timelineHeight}
-        rx={4}
         fill="var(--muted)"
-        opacity={0.35}
+        opacity={0.5}
       />
 
+      {/* Top separator — same style as the sample-axis line above */}
+      <line
+        x1={0} x2={innerWidth}
+        y1={timelineTop} y2={timelineTop}
+        stroke="var(--border)"
+        strokeWidth={1}
+      />
+
+      {/* Clip blocks */}
       {timelineRegions.map(({ region, timelineStart, timelineEnd }) => {
         const regionStart = Math.max(startSample, timelineStart);
         const regionEnd = Math.min(endSample, timelineEnd);
@@ -67,26 +76,33 @@ export function ClipTrack({
               onClick={() => onClipClick(region.id)}
               style={{ cursor: "pointer" }}
             >
+              {/* Clip body — outlined style, filled subtly */}
               <rect
                 x={x}
                 y={timelineBlockTop}
                 width={regionWidth}
                 height={timelineBlockHeight}
-                rx={4}
-                fill="var(--waveform-accent)"
-                opacity={isSelected ? 0.9 : 0.65}
+                fill={isSelected ? "var(--accent)" : "var(--muted)"}
+                stroke={isSelected ? "var(--foreground)" : "var(--border)"}
+                strokeWidth={isSelected ? 1.5 : 1}
               />
-              {regionWidth > 56 && (
+
+              {/* Clip name */}
+              {regionWidth > 40 && (
                 <text
-                  x={x + 6}
-                  y={timelineBlockTop + timelineBlockHeight / 2 + 3}
-                  fill="var(--foreground)"
-                  fontSize="10"
+                  x={x + 8}
+                  y={timelineBlockTop + timelineBlockHeight / 2 + 4}
+                  fill={isSelected ? "var(--accent-foreground)" : "var(--muted-foreground)"}
+                  fontSize="11"
+                  fontFamily="var(--font-mono)"
+                  fontWeight="500"
+                  className="pointer-events-none"
                 >
-                  {region.name}
+                  {regionWidth > 60 ? region.name : "…"}
                 </text>
               )}
 
+              {/* Resize handles (only when selected) */}
               {isSelected && (
                 <>
                   <rect
@@ -99,6 +115,17 @@ export function ClipTrack({
                     fill="transparent"
                     style={{ cursor: "ew-resize" }}
                   />
+                  {/* Visual left edge indicator */}
+                  <rect
+                    x={x}
+                    y={timelineBlockTop + 6}
+                    width={2}
+                    height={timelineBlockHeight - 12}
+                    fill="var(--foreground)"
+                    opacity={0.35}
+                    pointerEvents="none"
+                  />
+
                   <rect
                     data-clip-handle="end"
                     data-clip-id={region.id}
@@ -109,6 +136,16 @@ export function ClipTrack({
                     fill="transparent"
                     style={{ cursor: "ew-resize" }}
                   />
+                  {/* Visual right edge indicator */}
+                  <rect
+                    x={x + regionWidth - 2}
+                    y={timelineBlockTop + 6}
+                    width={2}
+                    height={timelineBlockHeight - 12}
+                    fill="var(--foreground)"
+                    opacity={0.35}
+                    pointerEvents="none"
+                  />
                 </>
               )}
             </g>
@@ -116,48 +153,45 @@ export function ClipTrack({
         );
       })}
 
+      {/* Cursor */}
       {cursorX !== null && (
         <line
-          x1={cursorX}
-          x2={cursorX}
+          x1={cursorX} x2={cursorX}
           y1={timelineBlockTop - 2}
           y2={timelineBlockTop + timelineBlockHeight + 2}
           stroke="var(--waveform-accent)"
-          strokeWidth={2}
-          opacity={0.95}
+          strokeWidth={1.5}
+          opacity={0.9}
         />
       )}
 
+      {/* Insert Preview */}
       {insertPreviewBounds && (
         <>
           <rect
             x={insertPreviewBounds.left}
-            y={timelineTop + 2}
+            y={timelineBlockTop}
             width={insertPreviewBounds.width}
-            height={timelineHeight - 4}
-            rx={4}
+            height={timelineBlockHeight}
             fill={insertPreviewBounds.valid ? "var(--waveform-accent)" : "var(--destructive)"}
-            opacity={0.18}
+            opacity={0.15}
           />
           <line
-            x1={insertPreviewBounds.left}
-            x2={insertPreviewBounds.left}
-            y1={timelineTop + 2}
-            y2={timelineTop + timelineHeight - 2}
+            x1={insertPreviewBounds.left} x2={insertPreviewBounds.left}
+            y1={timelineBlockTop} y2={timelineBlockTop + timelineBlockHeight}
             stroke={insertPreviewBounds.valid ? "var(--waveform-accent)" : "var(--destructive)"}
-            strokeWidth={2}
-            strokeDasharray="4 3"
-            opacity={0.95}
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+            opacity={0.8}
           />
           <line
             x1={insertPreviewBounds.left + insertPreviewBounds.width}
             x2={insertPreviewBounds.left + insertPreviewBounds.width}
-            y1={timelineTop + 2}
-            y2={timelineTop + timelineHeight - 2}
+            y1={timelineBlockTop} y2={timelineBlockTop + timelineBlockHeight}
             stroke={insertPreviewBounds.valid ? "var(--waveform-accent)" : "var(--destructive)"}
-            strokeWidth={2}
-            strokeDasharray="4 3"
-            opacity={0.95}
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+            opacity={0.8}
           />
         </>
       )}
