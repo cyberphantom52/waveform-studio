@@ -8,10 +8,42 @@ import {
 } from "@/lib/studio-io";
 import { getRegionLength, splitTimelineRegionsAtSelection, type Region } from "@/lib/dsp/region";
 import { clampZoomWindow, scaleZoomWindow } from "@/lib/zoom";
+import { ClipTrack } from "@/components/studio/clip-track";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { WaveformTrack } from "@/components/studio/waveform-track";
 import { Slider } from "@/components/ui/slider";
 import { ScanSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+
+type WaveformTrackId = "main" | "diff";
+
+const DEFAULT_TRACK_ORDER: WaveformTrackId[] = [
+  "main",
+  "diff",
+];
+
+function normalizeTrackOrder(trackOrder: string[]): WaveformTrackId[] {
+  const seen = new Set<WaveformTrackId>();
+  const normalized: WaveformTrackId[] = [];
+
+  for (const item of trackOrder) {
+    const next =
+      item === "diff"
+        ? "diff"
+        : item === "main" || item === "original" || item === "remastered"
+          ? "main"
+          : null;
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
+    normalized.push(next);
+  }
+
+  for (const fallback of DEFAULT_TRACK_ORDER) {
+    if (!seen.has(fallback)) normalized.push(fallback);
+  }
+
+  return normalized;
+}
 
 function pathFromSamples(
   samples: ArrayLike<number>,
@@ -26,12 +58,14 @@ function pathFromSamples(
   const step = Math.max(1, Math.ceil(samples.length / maxPoints));
   const points: string[] = [];
   const valueRange = maxValue - minValue || 1;
+  const verticalPadding = Math.min(height * 0.08, 12);
+  const drawableHeight = Math.max(0, height - verticalPadding * 2);
 
   for (let index = 0; index < samples.length; index += step) {
     const sample = samples[index];
     const x = (index / Math.max(1, samples.length - 1)) * width;
     const normalized = (sample - minValue) / valueRange;
-    const y = height - normalized * height;
+    const y = verticalPadding + (1 - normalized) * drawableHeight;
     points.push(
       `${points.length === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`,
     );
@@ -47,6 +81,9 @@ export function WaveformCanvas() {
   const scrollbarRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
   const panStateRef = useRef<{ startClientX: number; startZoomStart: number } | null>(null);
+  const trackDragRef = useRef<{
+    trackId: WaveformTrackId;
+  } | null>(null);
   const clipDragRef = useRef<
     | {
         region: Region;
@@ -69,7 +106,13 @@ export function WaveformCanvas() {
   const [width, setWidth] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [draggedTrackId, setDraggedTrackId] = useState<WaveformTrackId | null>(null);
   const [draggedClipStart, setDraggedClipStart] = useState<number | null>(null);
+  const [trackOrder, setTrackOrder] = useState<WaveformTrackId[]>(DEFAULT_TRACK_ORDER);
+  const [visibleLayers, setVisibleLayers] = useState<Array<"original" | "remastered" | "diff">>([
+    "original",
+    "remastered",
+  ]);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [dragTooltip, setDragTooltip] = useState<{ x: number; y: number } | null>(null);
   const [dragStartX, setDragStartX] = useState<number | null>(null);
@@ -115,18 +158,32 @@ export function WaveformCanvas() {
   const visibleDiff = computeDelta(visibleOriginal, visibleRemastered);
 
   const axisHeight = 26;
-  const timelineHeight = 24;
+  const timelineHeight = 38;
   const margin = {
     top: 12,
     right: 8,
     bottom: axisHeight + timelineHeight + 8,
-    left: 42,
+    left: 28,
   };
   const innerWidth = Math.max(0, width - margin.left - margin.right);
   const innerHeight = Math.max(0, canvasHeight - margin.top - margin.bottom);
+  const effectiveTrackOrder = normalizeTrackOrder(trackOrder as string[]);
+  const activeTrackIds = effectiveTrackOrder.filter((trackId) =>
+    trackId === "main"
+      ? visibleLayers.includes("original") || visibleLayers.includes("remastered")
+      : visibleLayers.includes("diff"),
+  );
+  const trackGap = activeTrackIds.length > 1 ? 12 : 0;
+  const perTrackHeight =
+    activeTrackIds.length > 0
+      ? Math.max(
+          56,
+          Math.floor((innerHeight - trackGap * (activeTrackIds.length - 1)) / activeTrackIds.length),
+        )
+      : innerHeight;
   const timelineTop = innerHeight + axisHeight;
-  const timelineBlockTop = timelineTop + 4;
-  const timelineBlockHeight = Math.max(8, timelineHeight - 8);
+  const timelineBlockTop = timelineTop + 16;
+  const timelineBlockHeight = Math.max(8, timelineHeight - 20);
   const selectionHandleWidth = 10;
   const scrollContentWidth =
     width > 0 ? Math.max(width + 1, Math.round(width / zoomRange)) : 0;
@@ -312,47 +369,41 @@ export function WaveformCanvas() {
     return { start, end: Math.max(start + 1, end) };
   };
 
-  const yForValue = (value: number, minValue: number, maxValue: number) => {
-    const range = maxValue - minValue || 1;
-    const normalized = (value - minValue) / range;
-    return innerHeight - normalized * innerHeight;
-  };
-
   const originalPath = useMemo(
     () =>
       pathFromSamples(
         visibleOriginal,
         innerWidth,
-        innerHeight,
+        perTrackHeight,
         -128,
         127,
         state.canvasConfig.density,
       ),
-    [visibleOriginal, innerWidth, innerHeight, state.canvasConfig.density],
+    [visibleOriginal, innerWidth, perTrackHeight, state.canvasConfig.density],
   );
   const remasteredPath = useMemo(
     () =>
       pathFromSamples(
         visibleRemastered,
         innerWidth,
-        innerHeight,
+        perTrackHeight,
         -128,
         127,
         state.canvasConfig.density,
       ),
-    [visibleRemastered, innerWidth, innerHeight, state.canvasConfig.density],
+    [visibleRemastered, innerWidth, perTrackHeight, state.canvasConfig.density],
   );
   const diffPath = useMemo(
     () =>
       pathFromSamples(
         visibleDiff,
         innerWidth,
-        innerHeight,
+        perTrackHeight,
         -255,
         255,
         state.canvasConfig.density,
       ),
-    [visibleDiff, innerWidth, innerHeight, state.canvasConfig.density],
+    [visibleDiff, innerWidth, perTrackHeight, state.canvasConfig.density],
   );
 
   const timelineRegions = useMemo(() => {
@@ -373,6 +424,62 @@ export function WaveformCanvas() {
       })
       .sort((left, right) => left.timelineStart - right.timelineStart);
   }, [draggedClipStart, effect, selectedClip?.id]);
+
+  const waveformTracks = useMemo(() => {
+    return activeTrackIds.map((trackId, index) => {
+      const top = index * (perTrackHeight + trackGap);
+
+      if (trackId === "main") {
+        const showOriginal = visibleLayers.includes("original");
+        const showRemastered = visibleLayers.includes("remastered");
+        const showBoth = showOriginal && showRemastered;
+        return {
+          id: trackId,
+          label:
+            showBoth
+              ? "OG/RM"
+              : showOriginal
+                ? "OG"
+                : "RM",
+          minValue: -128,
+          maxValue: 127,
+          path: showBoth ? remasteredPath : showOriginal ? originalPath : remasteredPath,
+          stroke: showBoth
+            ? "var(--waveform-remastered)"
+            : showOriginal
+              ? "var(--waveform-original)"
+              : "var(--waveform-remastered)",
+          strokeWidth: showBoth ? 1.25 : showOriginal ? 1 : 1.25,
+          opacity: 1,
+          secondaryPath: showBoth ? originalPath : undefined,
+          secondaryStroke: showBoth ? "var(--waveform-original)" : undefined,
+          secondaryStrokeWidth: 1,
+          secondaryOpacity: showBoth ? 0.45 : 1,
+          ticks: [-128, -64, 0, 64, 127],
+          top,
+        };
+      }
+
+      return {
+        id: trackId,
+        label: "DF",
+        minValue: -255,
+        maxValue: 255,
+        path: diffPath,
+        stroke: "var(--waveform-delta)",
+        strokeWidth: 1.25,
+        opacity: 1,
+        ticks: undefined,
+        top,
+        backgroundFill: "var(--muted)",
+        backgroundOpacity: 0.18,
+        backgroundRadius: 6,
+        separatorTop: { stroke: "var(--border)", strokeWidth: 1.5, opacity: 0.9 },
+        separatorBottom: { stroke: "var(--border)", strokeWidth: 1, opacity: 0.5 },
+        zeroLine: { value: 0, stroke: "var(--waveform-grid)", strokeWidth: 1 },
+      };
+    });
+  }, [activeTrackIds, diffPath, originalPath, perTrackHeight, remasteredPath, trackGap, visibleLayers]);
 
   const selectedClipEntry =
     timelineRegions.find((region) => region.region.id === state.selectedRegionId) ?? null;
@@ -411,7 +518,6 @@ export function WaveformCanvas() {
   };
 
   const selectionBounds = activeSelectionBounds ?? committedSelectionBounds;
-
   const commitSelectionFromBounds = (bounds: { left: number; right: number } | null) => {
     const nextSelection = selectionFromBounds(bounds);
     if (!nextSelection) {
@@ -430,7 +536,11 @@ export function WaveformCanvas() {
     return { start: clampedStart, end: clampedEnd };
   };
 
-  const updateDragTooltip = (event: React.PointerEvent<SVGSVGElement>) => {
+  const updateDragTooltip = (event: {
+    currentTarget: { getBoundingClientRect: () => DOMRect };
+    clientX: number;
+    clientY: number;
+  }) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     setDragTooltip({
       x: Math.max(8, Math.min(width - 8, event.clientX - bounds.left + 14)),
@@ -438,14 +548,45 @@ export function WaveformCanvas() {
     });
   };
 
-  const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (innerWidth <= 0) return;
+  const handleTrackHandlePointerDown = (
+    trackId: WaveformTrackId,
+    event: React.PointerEvent<SVGGElement>,
+  ) => {
+    trackDragRef.current = { trackId };
+    setDraggedTrackId(trackId);
+    suppressClickRef.current = false;
+    event.stopPropagation();
+    event.preventDefault();
+    event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);
+  };
 
-    const svgBounds = event.currentTarget.getBoundingClientRect();
+  const handlePlotPointerDown = (event: React.PointerEvent<SVGRectElement>) => {
+    if (innerWidth <= 0 || event.button !== 0) return;
+
+    const svgElement = event.currentTarget.ownerSVGElement;
+    if (!svgElement) return;
+
+    const svgBounds = svgElement.getBoundingClientRect();
     const relativeX = Math.min(
       Math.max(event.clientX - svgBounds.left - margin.left, 0),
       innerWidth,
     );
+
+    selectionStateRef.current = { startX: relativeX, currentX: relativeX };
+    setDragStartX(relativeX);
+    setDragCurrentX(relativeX);
+    setIsSelecting(true);
+    suppressClickRef.current = false;
+    updateDragTooltip(event);
+    svgElement.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (innerWidth <= 0) return;
+
+    const svgBounds = event.currentTarget.getBoundingClientRect();
     const relativeY = event.clientY - svgBounds.top - margin.top;
 
     const target = event.target as Element | null;
@@ -535,15 +676,6 @@ export function WaveformCanvas() {
     if (relativeY < 0 || relativeY > innerHeight) {
       return;
     }
-
-    selectionStateRef.current = { startX: relativeX, currentX: relativeX };
-    setDragStartX(relativeX);
-    setDragCurrentX(relativeX);
-    setIsSelecting(true);
-    suppressClickRef.current = false;
-    updateDragTooltip(event);
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.preventDefault();
   };
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -563,6 +695,38 @@ export function WaveformCanvas() {
         minZoomRange,
       );
       dispatch({ type: "SET_ZOOM", ...nextZoom });
+      return;
+    }
+
+    const trackDrag = trackDragRef.current;
+    if (trackDrag) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const relativeY = event.clientY - bounds.top - margin.top;
+      const targetIndex = activeTrackIds.findIndex((trackId, index) => {
+        const top = index * (perTrackHeight + trackGap);
+        return relativeY >= top && relativeY <= top + perTrackHeight;
+      });
+
+      if (targetIndex >= 0) {
+        const currentVisibleOrder = effectiveTrackOrder.filter((trackId) =>
+          trackId === "main"
+            ? visibleLayers.includes("original") || visibleLayers.includes("remastered")
+            : visibleLayers.includes("diff"),
+        );
+        const currentIndex = currentVisibleOrder.indexOf(trackDrag.trackId);
+        if (currentIndex !== targetIndex) {
+          const nextVisibleOrder = [...currentVisibleOrder];
+          const [moved] = nextVisibleOrder.splice(currentIndex, 1);
+          nextVisibleOrder.splice(targetIndex, 0, moved);
+          const hiddenOrder = effectiveTrackOrder.filter(
+            (trackId) =>
+              trackId === "main"
+                ? !visibleLayers.includes("original") && !visibleLayers.includes("remastered")
+                : !visibleLayers.includes("diff"),
+          );
+          setTrackOrder([...nextVisibleOrder, ...hiddenOrder]);
+        }
+      }
       return;
     }
 
@@ -676,6 +840,11 @@ export function WaveformCanvas() {
       setDraggedClipStart(null);
     }
 
+    if (trackDragRef.current) {
+      trackDragRef.current = null;
+      setDraggedTrackId(null);
+    }
+
     if (selectionStateRef.current) {
       commitSelectionFromBounds({
         left: Math.min(
@@ -728,15 +897,9 @@ export function WaveformCanvas() {
           Waveform
         </span>
         <ToggleGroup
-          type="single"
-          value={state.viewMode}
-          onValueChange={(value) => {
-            if (value)
-              dispatch({
-                type: "SET_VIEW_MODE",
-                mode: value as typeof state.viewMode,
-              });
-          }}
+          type="multiple"
+          value={visibleLayers}
+          onValueChange={setVisibleLayers}
           className="gap-0"
         >
           <ToggleGroupItem value="original" className="h-5 px-1.5 text-[10px]">
@@ -750,9 +913,6 @@ export function WaveformCanvas() {
           </ToggleGroupItem>
           <ToggleGroupItem value="diff" className="h-5 px-1.5 text-[10px]">
             DF
-          </ToggleGroupItem>
-          <ToggleGroupItem value="overlay" className="h-5 px-1.5 text-[10px]">
-            OV
           </ToggleGroupItem>
         </ToggleGroup>
         <span className="text-[10px] text-muted-foreground">
@@ -813,150 +973,66 @@ export function WaveformCanvas() {
             onContextMenu={(event) => event.preventDefault()}
           >
             <g transform={`translate(${margin.left},${margin.top})`}>
-              {[-128, -64, 0, 64, 127].map((tick) => (
-                <g key={tick}>
-                  <line
-                    x1={0}
-                    x2={innerWidth}
-                    y1={yForValue(tick, -128, 127)}
-                    y2={yForValue(tick, -128, 127)}
-                    stroke="var(--waveform-grid)"
-                    strokeWidth={tick === 0 ? 1 : 0.5}
-                  />
-                  <text
-                    x={-8}
-                    y={yForValue(tick, -128, 127) + 3}
-                    textAnchor="end"
-                    fill="var(--muted-foreground)"
-                    fontSize="9"
-                  >
-                    {tick}
-                  </text>
-                </g>
+              {waveformTracks.map((track) => (
+                <WaveformTrack
+                  key={track.id}
+                  trackId={track.id}
+                  width={innerWidth}
+                  height={perTrackHeight}
+                  top={track.top}
+                  minValue={track.minValue}
+                  maxValue={track.maxValue}
+                  path={track.path}
+                  stroke={track.stroke}
+                  strokeWidth={track.strokeWidth}
+                  opacity={track.opacity}
+                  secondaryPath={track.secondaryPath}
+                  secondaryStroke={track.secondaryStroke}
+                  secondaryStrokeWidth={track.secondaryStrokeWidth}
+                  secondaryOpacity={track.secondaryOpacity}
+                  ticks={track.ticks}
+                  backgroundFill={track.backgroundFill}
+                  backgroundOpacity={track.backgroundOpacity}
+                  separatorTop={track.separatorTop}
+                  separatorBottom={track.separatorBottom}
+                  zeroLine={track.zeroLine}
+                  label={track.label}
+                  showHandle={true}
+                  isDragging={draggedTrackId === track.id}
+                  onHandlePointerDown={handleTrackHandlePointerDown}
+                  onPlotPointerDown={handlePlotPointerDown}
+                />
               ))}
 
-              {state.viewMode === "diff" && (
-                <line
-                  x1={0}
-                  x2={innerWidth}
-                  y1={yForValue(0, -255, 255)}
-                  y2={yForValue(0, -255, 255)}
-                  stroke="var(--waveform-grid)"
-                  strokeWidth={1}
-                />
-              )}
-
-              <rect
-                x={0}
-                y={timelineTop}
-                width={innerWidth}
-                height={timelineHeight}
-                rx={4}
-                fill="var(--muted)"
-                opacity={0.35}
+              <ClipTrack
+                innerWidth={innerWidth}
+                timelineTop={timelineTop}
+                timelineHeight={timelineHeight}
+                timelineBlockTop={timelineBlockTop}
+                timelineBlockHeight={timelineBlockHeight}
+                selectionHandleWidth={selectionHandleWidth}
+                timelineRegions={timelineRegions}
+                startSample={startSample}
+                endSample={endSample}
+                selectedRegionId={state.selectedRegionId}
+                selectionBounds={selectionBounds}
+                xForSample={xForSample}
+                onClipClick={(regionId) => {
+                  if (suppressClickRef.current) return;
+                  setSelectionRange(null);
+                  setDragTooltip(null);
+                  dispatch({ type: "SET_SELECTED_REGION", id: regionId });
+                }}
               />
 
-              {timelineRegions.map(({ region, timelineStart, timelineEnd }) => {
-                const regionStart = Math.max(startSample, timelineStart);
-                const regionEnd = Math.min(endSample, timelineEnd);
-                if (regionEnd <= regionStart) return null;
-                const x = xForSample(regionStart);
-                const regionWidth = Math.max(1, xForSample(regionEnd) - x);
-                const isSelected = region.id === state.selectedRegionId;
-                return (
-                  <g key={region.id}>
-                    <rect
-                      x={x}
-                      y={0}
-                      width={regionWidth}
-                      height={innerHeight}
-                      fill="var(--waveform-accent)"
-                      opacity={isSelected ? 0.22 : 0.1}
-                    />
-                    <line
-                      x1={x}
-                      x2={x}
-                      y1={0}
-                      y2={innerHeight}
-                      stroke="var(--waveform-accent)"
-                      strokeWidth={isSelected ? 2 : 1}
-                      opacity={0.6}
-                    />
-                    <line
-                      x1={x + regionWidth}
-                      x2={x + regionWidth}
-                      y1={0}
-                      y2={innerHeight}
-                      stroke="var(--waveform-accent)"
-                      strokeWidth={isSelected ? 2 : 1}
-                      opacity={0.6}
-                    />
-                    <g
-                      data-clip-lane-hit
-                      data-clip-id={region.id}
-                      onClick={() => {
-                        if (suppressClickRef.current) return;
-                        setSelectionRange(null);
-                        setDragTooltip(null);
-                        dispatch({ type: "SET_SELECTED_REGION", id: region.id });
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <rect
-                        x={x}
-                        y={timelineBlockTop}
-                        width={regionWidth}
-                        height={timelineBlockHeight}
-                        rx={4}
-                        fill="var(--waveform-accent)"
-                        opacity={isSelected ? 0.9 : 0.65}
-                      />
-                      {regionWidth > 56 && (
-                        <text
-                          x={x + 6}
-                          y={timelineBlockTop + timelineBlockHeight / 2 + 3}
-                          fill="var(--foreground)"
-                          fontSize="10"
-                        >
-                          {region.name}
-                        </text>
-                      )}
-                    </g>
-                  </g>
-                );
-              })}
-
-              {(state.viewMode === "original" ||
-                state.viewMode === "overlay") &&
-                originalPath && (
-                  <path
-                    d={originalPath}
-                    fill="none"
-                    stroke="var(--waveform-original)"
-                    strokeWidth={1}
-                    opacity={state.viewMode === "overlay" ? 0.45 : 1}
-                  />
-                )}
-
-              {(state.viewMode === "remastered" ||
-                state.viewMode === "overlay") &&
-                remasteredPath && (
-                  <path
-                    d={remasteredPath}
-                    fill="none"
-                    stroke="var(--waveform-remastered)"
-                    strokeWidth={1.25}
-                  />
-                )}
-
-              {state.viewMode === "diff" && diffPath && (
-                <path
-                  d={diffPath}
-                  fill="none"
-                  stroke="var(--waveform-delta)"
-                  strokeWidth={1.25}
-                />
-              )}
+              <text
+                x={6}
+                y={timelineTop + 10}
+                fill="var(--muted-foreground)"
+                fontSize="9"
+              >
+                CLIPS
+              </text>
 
               {selectionBounds && (
                 <rect
@@ -969,66 +1045,6 @@ export function WaveformCanvas() {
                 />
               )}
 
-              {selectionBounds && (
-                <rect
-                  x={selectionBounds.left}
-                  y={timelineBlockTop}
-                  width={selectionBounds.right - selectionBounds.left}
-                  height={timelineBlockHeight}
-                  rx={4}
-                  fill="var(--waveform-accent)"
-                  opacity={0.25}
-                />
-              )}
-
-              {selectionBounds && (
-                <>
-                  <rect
-                    data-selection-body
-                    x={selectionBounds.left}
-                    y={timelineBlockTop}
-                    width={selectionBounds.right - selectionBounds.left}
-                    height={timelineBlockHeight}
-                    fill="transparent"
-                    style={{ cursor: "grab" }}
-                  />
-                  <rect
-                    data-selection-handle="start"
-                    x={selectionBounds.left - selectionHandleWidth / 2}
-                    y={timelineBlockTop - 2}
-                    width={selectionHandleWidth}
-                    height={timelineBlockHeight + 4}
-                    fill="transparent"
-                    style={{ cursor: "ew-resize" }}
-                  />
-                  <rect
-                    data-selection-handle="end"
-                    x={selectionBounds.right - selectionHandleWidth / 2}
-                    y={timelineBlockTop - 2}
-                    width={selectionHandleWidth}
-                    height={timelineBlockHeight + 4}
-                    fill="transparent"
-                    style={{ cursor: "ew-resize" }}
-                  />
-                  <line
-                    x1={selectionBounds.left}
-                    x2={selectionBounds.left}
-                    y1={timelineBlockTop - 2}
-                    y2={timelineBlockTop + timelineBlockHeight + 2}
-                    stroke="var(--waveform-accent)"
-                    strokeWidth={2}
-                  />
-                  <line
-                    x1={selectionBounds.right}
-                    x2={selectionBounds.right}
-                    y1={timelineBlockTop - 2}
-                    y2={timelineBlockTop + timelineBlockHeight + 2}
-                    stroke="var(--waveform-accent)"
-                    strokeWidth={2}
-                  />
-                </>
-              )}
-
               <line
                 x1={0}
                 x2={innerWidth}
@@ -1037,15 +1053,6 @@ export function WaveformCanvas() {
                 stroke="var(--border)"
                 strokeWidth={1}
               />
-
-              <text
-                x={6}
-                y={timelineTop + 14}
-                fill="var(--muted-foreground)"
-                fontSize="9"
-              >
-                CLIPS
-              </text>
 
               {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                 const sample = Math.round(
