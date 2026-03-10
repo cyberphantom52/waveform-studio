@@ -107,22 +107,6 @@ export function ClipTrack({
                     fill="transparent"
                     style={{ cursor: "ew-resize" }}
                   />
-                  <line
-                    x1={x}
-                    x2={x}
-                    y1={timelineBlockTop - 2}
-                    y2={timelineBlockTop + timelineBlockHeight + 2}
-                    stroke="var(--waveform-accent)"
-                    strokeWidth={2}
-                  />
-                  <line
-                    x1={x + regionWidth}
-                    x2={x + regionWidth}
-                    y1={timelineBlockTop - 2}
-                    y2={timelineBlockTop + timelineBlockHeight + 2}
-                    stroke="var(--waveform-accent)"
-                    strokeWidth={2}
-                  />
                 </>
               )}
             </g>
