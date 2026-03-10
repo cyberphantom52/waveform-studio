@@ -18,6 +18,7 @@ interface ClipTrackProps {
   endSample: number;
   selectedRegionId: string | null;
   cursorX: number | null;
+  insertMarkerX: number | null;
   xForSample: (sample: number) => number;
   onClipClick: (regionId: string) => void;
 }
@@ -34,6 +35,7 @@ export function ClipTrack({
   endSample,
   selectedRegionId,
   cursorX,
+  insertMarkerX,
   xForSample,
   onClipClick,
 }: ClipTrackProps) {
@@ -124,6 +126,30 @@ export function ClipTrack({
           strokeWidth={2}
           opacity={0.95}
         />
+      )}
+
+      {insertMarkerX !== null && (
+        <>
+          <rect
+            x={insertMarkerX - 5}
+            y={timelineTop + 2}
+            width={10}
+            height={timelineHeight - 4}
+            rx={4}
+            fill="var(--waveform-accent)"
+            opacity={0.18}
+          />
+          <line
+            x1={insertMarkerX}
+            x2={insertMarkerX}
+            y1={timelineTop + 2}
+            y2={timelineTop + timelineHeight - 2}
+            stroke="var(--waveform-accent)"
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            opacity={0.95}
+          />
+        </>
       )}
     </>
   );

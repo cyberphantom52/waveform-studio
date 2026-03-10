@@ -127,6 +127,7 @@ export function WaveformCanvas() {
     "remastered",
   ]);
   const [cursorSample, setCursorSample] = useState<number | null>(null);
+  const [insertMarkerSample, setInsertMarkerSample] = useState<number | null>(null);
   const [dragTooltip, setDragTooltip] = useState<{ x: number; y: number } | null>(null);
   const effect = state.effects[state.activeEffectIndex];
   const canvasHeight = state.canvasConfig.height;
@@ -556,6 +557,12 @@ export function WaveformCanvas() {
     cursorSample !== null && cursorSample >= startSample && cursorSample <= endSample
       ? xForSample(cursorSample)
       : null;
+  const visibleInsertMarkerX =
+    insertMarkerSample !== null &&
+    insertMarkerSample >= startSample &&
+    insertMarkerSample <= endSample
+      ? xForSample(insertMarkerSample)
+      : null;
   const cursorPositionMs =
     effect && cursorSample !== null
       ? (cursorSample / effect.waveform.sampleRate) * 1000
@@ -583,26 +590,51 @@ export function WaveformCanvas() {
     if (!effect) return;
     const dragTypes = Array.from(event.dataTransfer.types);
     if (!dragTypes.includes(BROWSE_WAVEFORM_DRAG_TYPE)) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeY = event.clientY - bounds.top - margin.top;
+    const isOverTimeline =
+      relativeY >= timelineTop && relativeY <= timelineTop + timelineHeight;
+    if (!isOverTimeline) {
+      if (insertMarkerSample !== null) setInsertMarkerSample(null);
+      return;
+    }
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
+    const relativeX = Math.min(
+      Math.max(event.clientX - bounds.left - margin.left, 0),
+      innerWidth,
+    );
+    setInsertMarkerSample(cursorFromPoint(relativeX));
+  };
+
+  const handleTimelineDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setInsertMarkerSample(null);
   };
 
   const handleTimelineDrop = (event: React.DragEvent<HTMLDivElement>) => {
     if (!effect || innerWidth <= 0) return;
     const sourceEffectId = event.dataTransfer.getData(BROWSE_WAVEFORM_DRAG_TYPE);
-    if (!sourceEffectId) return;
+    if (!sourceEffectId) {
+      setInsertMarkerSample(null);
+      return;
+    }
 
     const bounds = event.currentTarget.getBoundingClientRect();
     const relativeY = event.clientY - bounds.top - margin.top;
     const isOverTimeline =
       relativeY >= timelineTop && relativeY <= timelineTop + timelineHeight;
-    if (!isOverTimeline) return;
+    if (!isOverTimeline) {
+      setInsertMarkerSample(null);
+      return;
+    }
 
     event.preventDefault();
     const relativeX = Math.min(
       Math.max(event.clientX - bounds.left - margin.left, 0),
       innerWidth,
     );
+    setInsertMarkerSample(null);
     dispatch({
       type: "INSERT_EFFECT_CLIP",
       sourceEffectId,
@@ -1041,6 +1073,7 @@ export function WaveformCanvas() {
         ref={viewportRef}
         className="relative flex-1 overflow-hidden bg-background"
         onDragOver={handleTimelineDragOver}
+        onDragLeave={handleTimelineDragLeave}
         onDrop={handleTimelineDrop}
       >
         {!effect ? (
@@ -1108,6 +1141,7 @@ export function WaveformCanvas() {
                 endSample={endSample}
                 selectedRegionId={state.selectedRegionId}
                 cursorX={visibleCursorX}
+                insertMarkerX={visibleInsertMarkerX}
                 xForSample={xForSample}
                 onClipClick={(regionId) => {
                   if (suppressClickRef.current) return;
