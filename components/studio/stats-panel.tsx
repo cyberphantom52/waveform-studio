@@ -447,6 +447,17 @@ export function StatsPanel() {
     },
     [dispatch],
   );
+  const setCompareFromEffectId = useCallback(
+    (effectId: string) => {
+      const sourceEffect = state.effects.find(
+        (entry) => entry.waveform.id === effectId,
+      );
+      if (!sourceEffect) return false;
+      dispatch({ type: "SET_COMPARE_WAVEFORM", waveform: sourceEffect.waveform });
+      return true;
+    },
+    [dispatch, state.effects],
+  );
   const compareStats = useMemo(
     () =>
       state.compareWaveform
