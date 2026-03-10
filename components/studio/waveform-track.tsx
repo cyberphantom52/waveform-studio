@@ -1,5 +1,3 @@
-"use client";
-
 import { GripVertical } from "lucide-react";
 import { Plot } from "@/components/studio/plot";
 import { useState } from "react";
@@ -10,7 +8,7 @@ const HANDLE_HIT_X = -18;
 const TRACK_RIGHT_PADDING = 8;
 const TRACK_INNER_PADDING_X = 8;
 const TRACK_INNER_PADDING_Y = 8;
-const TRACK_METADATA_HEIGHT = 18;
+const TRACK_METADATA_HEIGHT = 20; // Increased slightly for better badge fit
 const TRACK_METADATA_GAP = 6;
 
 interface WaveformTrackProps {
@@ -45,6 +43,39 @@ interface WaveformTrackProps {
   onPlotPointerDown?: (event: React.PointerEvent<SVGRectElement>) => void;
 }
 
+// Emulates a Shadcn <Badge> purely via SVG
+function TrackBadge({ label, x, y, width }: { label: string; x: number; y: number; width: number }) {
+  const badgeWidth = Math.max(32, label.length * 8 + 12);
+  const badgeHeight = 18;
+
+  return (
+    <g transform={`translate(${x - badgeWidth},${y})`}>
+      <rect
+        x={0}
+        y={0}
+        width={badgeWidth}
+        height={badgeHeight}
+        rx={4} // Consistent Shadcn radius
+        fill="var(--secondary)" // Shadcn's neutral 'secondary' background
+        stroke="var(--border)"
+        strokeWidth={1}
+      />
+      <text
+        x={badgeWidth / 2}
+        y={badgeHeight / 2 + 3}
+        textAnchor="middle"
+        fill="var(--secondary-foreground)"
+        fontSize="10"
+        fontFamily="var(--font-mono)" // Code-like mono font
+        fontWeight="bold"
+        className="tracking-wider uppercase"
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
 export function WaveformTrack({
   width,
   height,
@@ -65,8 +96,8 @@ export function WaveformTrack({
   tertiaryStrokeWidth = 1,
   tertiaryOpacity = 1,
   ticks,
-  backgroundFill,
-  backgroundOpacity,
+  backgroundFill = "var(--card)", // Default to Shadcn Card background
+  backgroundOpacity = 1,
   separatorTop,
   separatorBottom,
   zeroLine,
@@ -80,54 +111,43 @@ export function WaveformTrack({
   const showTrackHighlight = isDragging || isHandleHovered;
   const plotY = TRACK_INNER_PADDING_Y;
   const plotHeight = Math.max(0, height - plotY - TRACK_INNER_PADDING_Y);
-  const labelWidth = label ? Math.max(34, label.length * 7 + 12) : 0;
-  const metadataY = height - TRACK_INNER_PADDING_Y - TRACK_METADATA_HEIGHT;
-  const metadataX = Math.max(
-    TRACK_INNER_PADDING_X,
-    width - labelWidth - TRACK_INNER_PADDING_X,
-  );
+  const metadataY = height - TRACK_INNER_PADDING_Y - TRACK_METADATA_HEIGHT + 2;
+  const metadataX = width - TRACK_INNER_PADDING_X;
 
   return (
     <g transform={`translate(0,${top})`}>
+      {/* 
+        Track Background: Muted / Card Shadcn emulation
+      */}
       <rect
         x={-TRACK_GUTTER_WIDTH}
         y={0}
         width={width + TRACK_GUTTER_WIDTH + TRACK_RIGHT_PADDING}
         height={height}
-        fill="var(--card)"
-        stroke="var(--border)"
+        fill={backgroundFill}
+        opacity={backgroundOpacity}
+        stroke={showTrackHighlight ? "var(--ring)" : "transparent"} // Highlighting uses the focus ring color
+        strokeWidth={showTrackHighlight ? 1 : 0}
+        rx={8} // Card border radius effect
+        className="transition-colors duration-200"
       />
 
-      <rect
-        x={-TRACK_GUTTER_WIDTH}
-        y={0}
-        width={width + TRACK_GUTTER_WIDTH + TRACK_RIGHT_PADDING}
-        height={height}
-        fill="var(--muted)"
-        opacity={showTrackHighlight ? 0.32 : 0}
-      />
-
-      {label && (
-        <g transform={`translate(${metadataX},${metadataY})`}>
-          <rect
-            x={0}
-            y={0}
-            width={labelWidth}
-            height={TRACK_METADATA_HEIGHT}
-            fill="var(--muted)"
-            stroke="var(--border)"
-          />
-          <text
-            x={labelWidth / 2}
-            y={TRACK_METADATA_HEIGHT / 2 + 3}
-            textAnchor="middle"
-            fill="var(--muted-foreground)"
-            fontSize="9"
-          >
-            {label}
-          </text>
-        </g>
+      {/* Dragging Overlay Tint */}
+      {showTrackHighlight && (
+        <rect
+          x={-TRACK_GUTTER_WIDTH}
+          y={0}
+          width={width + TRACK_GUTTER_WIDTH + TRACK_RIGHT_PADDING}
+          height={height}
+          fill="var(--accent)"
+          opacity={0.15}
+          rx={8}
+          pointerEvents="none"
+        />
       )}
+
+      {/* Track Label Badge */}
+      {label && <TrackBadge label={label} x={metadataX} y={metadataY} width={width} />}
 
       <Plot
         x={0}
@@ -151,14 +171,14 @@ export function WaveformTrack({
         tertiaryStrokeWidth={tertiaryStrokeWidth}
         tertiaryOpacity={tertiaryOpacity}
         ticks={ticks}
-        backgroundFill={backgroundFill}
-        backgroundOpacity={backgroundOpacity}
+        backgroundFill="transparent" // Let the track background shine through
         separatorTop={separatorTop}
         separatorBottom={separatorBottom}
         zeroLine={zeroLine}
         onPointerDown={onPlotPointerDown}
       />
 
+      {/* Custom Grip Handle matching Shadcn patterns */}
       {showHandle && trackId && onHandlePointerDown && (
         <g
           data-track-handle={trackId}
@@ -168,27 +188,40 @@ export function WaveformTrack({
           onPointerLeave={() => setIsHandleHovered(false)}
           style={{ cursor: isDragging ? "grabbing" : "grab" }}
         >
+          {/* Transparent hit area for mouse interaction */}
           <rect
-            x={HANDLE_HIT_X}
+            x={HANDLE_HIT_X - 10}
             y={0}
-            width={14}
+            width={24}
             height={height}
             fill="transparent"
           />
-          <rect
-            x={HANDLE_BAR_X}
-            y={0}
-            width={2}
-            height={height}
-            fill="var(--border)"
-            opacity={showTrackHighlight ? 0.9 : 0.55}
-          />
-          <g transform={`translate(${HANDLE_BAR_X - 3},${Math.max(4, height / 2 - 6)})`}>
-            <GripVertical
-              className={`size-3 text-muted-foreground transition-opacity ${
-                isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          
+          <g transform={`translate(${HANDLE_BAR_X - 6},${Math.max(4, height / 2 - 8)})`}>
+            {/* 
+              Lucide GripVertical rendered directly in SVG via wrapping <svg> element.
+              We control opacity purely via classes.
+            */}
+            <svg 
+              width="16" 
+              height="16" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              className={`text-muted-foreground transition-opacity ${
+                isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-75"
               }`}
-            />
+            >
+              <circle cx="9" cy="12" r="1" />
+              <circle cx="9" cy="5" r="1" />
+              <circle cx="9" cy="19" r="1" />
+              <circle cx="15" cy="12" r="1" />
+              <circle cx="15" cy="5" r="1" />
+              <circle cx="15" cy="19" r="1" />
+            </svg>
           </g>
         </g>
       )}

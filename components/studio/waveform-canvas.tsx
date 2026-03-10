@@ -1325,7 +1325,9 @@ export function WaveformCanvas() {
                 x={6}
                 y={timelineTop + 10}
                 fill="var(--muted-foreground)"
-                fontSize="9"
+                fontSize="10"
+                fontFamily="var(--font-mono)"
+                fontWeight="500"
               >
                 CLIPS
               </text>
@@ -1373,7 +1375,8 @@ export function WaveformCanvas() {
                         ratio === 0 ? "start" : ratio === 1 ? "end" : "middle"
                       }
                       fill="var(--muted-foreground)"
-                      fontSize="9"
+                      fontSize="10"
+                      fontFamily="var(--font-mono)"
                     >
                       {sample}
                     </text>

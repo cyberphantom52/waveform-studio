@@ -114,11 +114,11 @@
   --font-sans: Geist Mono, monospace;
   --font-serif: Geist Mono, monospace;
   --font-mono: Geist Mono, monospace;
-  --waveform-original: oklch(0.55 0 0);
-  --waveform-remastered: oklch(0.80 0.16 162);
-  --waveform-delta: oklch(0.72 0.12 55);
-  --waveform-accent: oklch(0.75 0.15 162);
-  --waveform-grid: oklch(0.30 0 0);
+  --waveform-original: oklch(0.60 0.15 250); /* A vibrant blue for the main waveform */
+  --waveform-remastered: oklch(0.70 0.18 160); /* A bright teal/green for remastered */
+  --waveform-delta: oklch(0.65 0.20 30); /* A strong orange/red for diffs */
+  --waveform-accent: oklch(0.60 0.15 250); /* Match original for cursors */
+  --waveform-grid: oklch(0.90 0 0); /* Soft light gray for grid in light mode */
   --shadow-color: hsl(0 0% 0%);
   --shadow-opacity: 0;
   --shadow-blur: 0px;
@@ -175,11 +175,11 @@
   --font-sans: Geist Mono, monospace;
   --font-serif: Geist Mono, monospace;
   --font-mono: Geist Mono, monospace;
-  --waveform-original: oklch(0.50 0 0);
-  --waveform-remastered: oklch(0.80 0.16 162);
-  --waveform-delta: oklch(0.72 0.12 55);
-  --waveform-accent: oklch(0.80 0.16 162);
-  --waveform-grid: oklch(0.25 0 0);
+  --waveform-original: oklch(0.70 0.15 250); /* Brighter blue for dark mode */
+  --waveform-remastered: oklch(0.80 0.18 160); /* Brighter teal for dark mode */
+  --waveform-delta: oklch(0.75 0.20 30); /* Brighter orange for diffs */
+  --waveform-accent: oklch(0.85 0 0); /* Bright white/gray cursor in dark mode */
+  --waveform-grid: oklch(0.25 0 0); /* Subtle dark gray grid */
   --shadow-color: hsl(0 0% 0%);
   --shadow-opacity: 0;
   --shadow-blur: 0px;

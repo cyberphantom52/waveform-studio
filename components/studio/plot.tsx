@@ -1,3 +1,5 @@
+import React from "react";
+
 interface PlotProps {
   x?: number;
   y?: number;
@@ -28,9 +30,9 @@ interface PlotProps {
   onPointerDown?: (event: React.PointerEvent<SVGRectElement>) => void;
 }
 
-const PLOT_PADDING_Y = 6;
-const SCALE_GUTTER_WIDTH = 24;
-const PLOT_RIGHT_PADDING = 6;
+const PLOT_PADDING_Y = 8;
+const SCALE_GUTTER_WIDTH = 32;
+const PLOT_RIGHT_PADDING = 8;
 const PLOT_CLIP_BLEED_Y = 2;
 
 function yForValue(
@@ -55,7 +57,7 @@ export function Plot({
   maxValue,
   path,
   stroke,
-  strokeWidth = 1,
+  strokeWidth = 1.2,
   opacity = 1,
   secondaryPath,
   secondaryStroke,
@@ -94,6 +96,7 @@ export function Plot({
         </clipPath>
       </defs>
 
+      {/* Plot Background Area */}
       <rect
         x={0}
         y={0}
@@ -101,9 +104,9 @@ export function Plot({
         height={height}
         fill={backgroundFill}
         opacity={backgroundOpacity}
-        stroke="var(--border)"
       />
 
+      {/* Interactive Overlay Layer */}
       <rect
         x={0}
         y={0}
@@ -114,6 +117,7 @@ export function Plot({
         style={{ cursor: onPointerDown ? "crosshair" : undefined }}
       />
 
+      {/* Separators */}
       {separatorTop && (
         <line
           x1={0}
@@ -122,7 +126,7 @@ export function Plot({
           y2={0}
           stroke={separatorTop.stroke}
           strokeWidth={separatorTop.strokeWidth ?? 1}
-          opacity={separatorTop.opacity}
+          opacity={separatorTop.opacity ?? 1}
         />
       )}
 
@@ -134,28 +138,36 @@ export function Plot({
           y2={height}
           stroke={separatorBottom.stroke}
           strokeWidth={separatorBottom.strokeWidth ?? 1}
-          opacity={separatorBottom.opacity}
+          opacity={separatorBottom.opacity ?? 1}
         />
       )}
 
+      {/* Ticks and Grid Lines */}
       {ticks?.map((tick) => {
         const yPos = plotInnerY + yForValue(tick, minValue, maxValue, plotInnerHeight);
         return (
-          <g key={tick}>
+          <g key={tick} className="opacity-80">
+            {/* Dashed background grid lines to match Shadcn charting aesthetics */}
             <line
               x1={plotInnerX}
               x2={plotInnerX + plotInnerWidth}
               y1={yPos}
               y2={yPos}
-              stroke="var(--waveform-grid)"
-              strokeWidth={tick === 0 ? 1 : 0.5}
+              stroke="var(--border)"
+              strokeWidth={tick === 0 ? 1 : 0.75}
+              strokeDasharray={tick === 0 ? undefined : "3 3"}
+              opacity={tick === 0 ? 0.8 : 0.4}
             />
+            {/* Sleek, mono-spaced tick labels */}
             <text
-              x={plotInnerX - 4}
+              x={plotInnerX - 8}
               y={yPos + 3}
               textAnchor="end"
               fill="var(--muted-foreground)"
-              fontSize="9"
+              fontSize="10"
+              fontFamily="var(--font-mono)"
+              fontWeight="500"
+              className="tracking-wider"
             >
               {tick}
             </text>
@@ -163,6 +175,7 @@ export function Plot({
         );
       })}
 
+      {/* Primary Zero Line Guide */}
       {zeroLine && (
         <line
           x1={plotInnerX}
@@ -171,9 +184,11 @@ export function Plot({
           y2={plotInnerY + yForValue(zeroLine.value, minValue, maxValue, plotInnerHeight)}
           stroke={zeroLine.stroke}
           strokeWidth={zeroLine.strokeWidth ?? 1}
+          opacity={0.6}
         />
       )}
 
+      {/* Waveform Paths */}
       {path && (
         <g clipPath={`url(#${clipId})`}>
           <g transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}>
@@ -183,6 +198,8 @@ export function Plot({
               stroke={stroke}
               strokeWidth={strokeWidth}
               opacity={opacity}
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
           </g>
         </g>
@@ -197,11 +214,12 @@ export function Plot({
               stroke={secondaryStroke}
               strokeWidth={secondaryStrokeWidth}
               opacity={secondaryOpacity}
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
           </g>
         </g>
       )}
-
 
       {tertiaryPath && tertiaryStroke && (
         <g clipPath={`url(#${clipId})`}>
@@ -212,6 +230,8 @@ export function Plot({
               stroke={tertiaryStroke}
               strokeWidth={tertiaryStrokeWidth}
               opacity={tertiaryOpacity}
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
           </g>
         </g>
