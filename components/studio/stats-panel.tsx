@@ -533,6 +533,13 @@ export function StatsPanel() {
         onDrop={(event) => {
           event.preventDefault();
           setIsDragging(false);
+          const draggedEffectId = event.dataTransfer.getData(
+            BROWSE_WAVEFORM_DRAG_TYPE,
+          );
+          if (draggedEffectId) {
+            setCompareFromEffectId(draggedEffectId);
+            return;
+          }
           void importCompareFiles(event.dataTransfer.files);
         }}
       >
@@ -543,8 +550,8 @@ export function StatsPanel() {
         >
           <Upload className="size-3.5" />
           {state.compareWaveform
-            ? `Replace target or drop .bin · ${state.compareWaveform.name}`
-            : "Add target or drop .bin to enable compare + Auto Fix"}
+            ? `Replace target via Browse drag or drop .bin · ${state.compareWaveform.name}`
+            : "Drag a Browse waveform here or drop .bin to enable compare + Auto Fix"}
         </button>
         {state.compareWaveform && (
           <div className="mt-2 flex justify-end">
