@@ -336,7 +336,7 @@ export function WaveformCanvas() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      setDraggedClipStart(null);
+      setDraftClipPlacement(null);
       setSelectionRange(null);
       setDragTooltip(null);
       setDragStartX(null);
@@ -424,7 +424,7 @@ export function WaveformCanvas() {
 
   const timelineRegions = useMemo(() => {
     if (!effect) return [] as Array<{
-      region: (typeof effect.regions)[number];
+      region: Region;
       timelineStart: number;
       timelineEnd: number;
     }>;
@@ -565,11 +565,12 @@ export function WaveformCanvas() {
   };
 
   const handleTrackHandlePointerDown = (
-    trackId: WaveformTrackId,
+    trackId: string,
     event: React.PointerEvent<SVGGElement>,
   ) => {
-    trackDragRef.current = { trackId };
-    setDraggedTrackId(trackId);
+    const nextTrackId: WaveformTrackId = trackId === "diff" ? "diff" : "main";
+    trackDragRef.current = { trackId: nextTrackId };
+    setDraggedTrackId(nextTrackId);
     suppressClickRef.current = false;
     event.stopPropagation();
     event.preventDefault();
@@ -1035,7 +1036,11 @@ export function WaveformCanvas() {
         <ToggleGroup
           type="multiple"
           value={visibleLayers}
-          onValueChange={setVisibleLayers}
+          onValueChange={(value) =>
+            setVisibleLayers((Array.isArray(value) ? value : []) as Array<
+              "original" | "remastered" | "diff"
+            >)
+          }
           className="gap-0"
         >
           <ToggleGroupItem value="original" className="h-5 px-1.5 text-[10px]">

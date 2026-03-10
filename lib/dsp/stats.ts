@@ -96,7 +96,6 @@ export function computeStats(
   let sigNegSum = 0;
   let sigCount = 0;
   let firstSigIndex = -1;
-  let lastSigIndex = -1;
 
   // Zero crossings that occur between significant samples only.
   // We track these by recording crossings where at least one side
@@ -127,7 +126,6 @@ export function computeStats(
       else sigNegSum += v;
       sigCount++;
       if (firstSigIndex === -1) firstSigIndex = i;
-      lastSigIndex = i;
     }
 
     // Zero crossing detection — only count crossings where at least
