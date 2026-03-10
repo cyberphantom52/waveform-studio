@@ -110,6 +110,7 @@ export function WaveformCanvas() {
         startClientX: number;
         minStart: number;
         maxStart: number;
+        snapTargets: number[];
       }
     | null
   >(null);
@@ -818,6 +819,10 @@ export function WaveformCanvas() {
         maxStart: nextRegion
           ? nextRegion.timelineStart - clipLength
           : Math.max(0, effect.waveform.samples.length - clipLength),
+        snapTargets: [
+          previousRegion ? previousRegion.timelineEnd : null,
+          nextRegion ? nextRegion.timelineStart - clipLength : null,
+        ].filter((value): value is number => value !== null),
       };
       setDraftClipPlacement({
         start: selectedClipEntry.timelineStart,
@@ -951,10 +956,27 @@ export function WaveformCanvas() {
         suppressClickRef.current = true;
       }
 
-      const nextStart = Math.max(
+      const unclampedStart = clipDrag.region.timelineStart + deltaSamples;
+      const boundedStart = Math.max(
         clipDrag.minStart,
-        Math.min(clipDrag.region.timelineStart + deltaSamples, clipDrag.maxStart),
+        Math.min(unclampedStart, clipDrag.maxStart),
       );
+      const snapThresholdSamples = Math.max(
+        1,
+        Math.round((12 / Math.max(1, innerWidth)) * visibleSpan),
+      );
+      let nextStart = boundedStart;
+      let bestSnapDistance = Number.POSITIVE_INFINITY;
+      for (const snapTarget of clipDrag.snapTargets) {
+        const snapDistance = Math.abs(boundedStart - snapTarget);
+        if (
+          snapDistance <= snapThresholdSamples &&
+          snapDistance < bestSnapDistance
+        ) {
+          nextStart = snapTarget;
+          bestSnapDistance = snapDistance;
+        }
+      }
       setDraftClipPlacement({
         start: nextStart,
         length: getRegionLength(clipDrag.region),
