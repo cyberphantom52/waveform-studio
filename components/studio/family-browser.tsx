@@ -3,18 +3,31 @@
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Folder, FileAudio, Trash2, Upload, CheckSquare, Square } from "lucide-react";
+import { Folder, FileAudio, Trash2, Upload, CheckSquare, Square, Download } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
-import { importStudioFiles } from "@/lib/studio-io";
+import {
+  BROWSE_WAVEFORM_DRAG_TYPE,
+  downloadWaveformBin,
+  importStudioFiles,
+} from "@/lib/studio-io";
 
 export function FamilyBrowser() {
   const state = useStudio();
   const dispatch = useStudioDispatch();
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [contextMenu, setContextMenu] = useState<
+    { index: number; x: number; y: number } | null
+  >(null);
   const familyEntries = Object.entries(state.families).sort(([left], [right]) =>
     left.localeCompare(right)
   );
@@ -33,13 +46,55 @@ export function FamilyBrowser() {
     [dispatch, state.globalDefaultPlayRateHz]
   );
 
+  const exportEffect = useCallback(
+    (index: number) => {
+      const effect = state.effects[index];
+      if (!effect) return;
+      const data = effect.remastered ?? effect.waveform.samples;
+      downloadWaveformBin(`${effect.waveform.name}_remastered.bin`, data);
+    },
+    [state.effects],
+  );
+
   return (
     <div className="flex h-full flex-col">
+      <DropdownMenu
+        open={contextMenu !== null}
+        onOpenChange={(open) => {
+          if (!open) setContextMenu(null);
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            className="pointer-events-none fixed h-0 w-0 opacity-0"
+            style={{
+              left: contextMenu?.x ?? 0,
+              top: contextMenu?.y ?? 0,
+            }}
+          />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={4}>
+          <DropdownMenuItem
+            onSelect={() => {
+              if (!contextMenu) return;
+              exportEffect(contextMenu.index);
+              setContextMenu(null);
+            }}
+          >
+            <Download className="size-3.5" />
+            Export waveform
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <input
         ref={fileRef}
         type="file"
         multiple
-        accept=".bin,.json"
+        accept=".bin"
         className="hidden"
         onChange={(event) => {
           if (!event.target.files) return;
@@ -105,7 +160,7 @@ export function FamilyBrowser() {
           onClick={() => fileRef.current?.click()}
         >
           <Upload className="size-3.5" />
-          Add files or drop `.bin` / `vibrator_effect.json`
+          Add files or drop `.bin`
         </button>
       </div>
 
@@ -137,12 +192,30 @@ export function FamilyBrowser() {
                           ? "bg-accent text-accent-foreground"
                           : "hover:bg-muted"
                       )}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "copy";
+                        event.dataTransfer.setData(
+                          BROWSE_WAVEFORM_DRAG_TYPE,
+                          effect.waveform.id,
+                        );
+                        event.dataTransfer.setData("text/plain", effect.waveform.name);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setContextMenu({
+                          index: idx,
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
                       onClick={() =>
                         dispatch({ type: "SET_ACTIVE_EFFECT", index: idx })
                       }
                     >
                       <button
                         type="button"
+                        draggable={false}
                         className="rounded-sm p-0.5"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -164,6 +237,7 @@ export function FamilyBrowser() {
                       </span>
                       <button
                         type="button"
+                        draggable={false}
                         className="rounded-sm p-0.5 opacity-60 transition-opacity hover:opacity-100"
                         onClick={(event) => {
                           event.stopPropagation();

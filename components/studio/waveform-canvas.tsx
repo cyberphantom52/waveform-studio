@@ -20,6 +20,7 @@ import { ScanSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type WaveformTrackId = "main" | "diff";
+type VisibleLayer = "original" | "remastered" | "diff" | "compare";
 
 const DEFAULT_TRACK_ORDER: WaveformTrackId[] = [
   "main",
@@ -120,7 +121,7 @@ export function WaveformCanvas() {
     { start: number; length: number } | null
   >(null);
   const [trackOrder, setTrackOrder] = useState<WaveformTrackId[]>(DEFAULT_TRACK_ORDER);
-  const [visibleLayers, setVisibleLayers] = useState<Array<"original" | "remastered" | "diff">>([
+  const [visibleLayers, setVisibleLayers] = useState<VisibleLayer[]>([
     "original",
     "remastered",
   ]);
@@ -148,10 +149,12 @@ export function WaveformCanvas() {
     effect?.regions.find((region) => region.id === state.selectedRegionId) ?? null;
   const timelineOriginal = effect ? getTimelineOriginalSamples(effect) : new Int8Array();
   const original = effect ? effect.waveform.samples : new Int8Array();
+  const compare = state.compareWaveform?.samples ?? new Int8Array();
   const remastered = effect?.remastered ?? timelineOriginal;
   const baseLength = Math.max(
     timelineOriginal.length,
     original.length,
+    compare.length,
     remastered.length,
     1,
   );
@@ -180,6 +183,7 @@ export function WaveformCanvas() {
   };
 
   const visibleOriginal = sliceSamplesWithSilence(original, startSample, endSample);
+  const visibleCompare = sliceSamplesWithSilence(compare, startSample, endSample);
   const visibleRemastered = sliceSamplesWithSilence(
     remastered,
     startSample,
@@ -197,11 +201,20 @@ export function WaveformCanvas() {
   };
   const innerWidth = Math.max(0, width - margin.left - margin.right);
   const innerHeight = Math.max(0, canvasHeight - margin.top - margin.bottom);
+  const effectiveVisibleLayers = useMemo(
+    () =>
+      state.compareWaveform
+        ? visibleLayers
+        : visibleLayers.filter((layer) => layer !== "compare"),
+    [state.compareWaveform, visibleLayers],
+  );
   const effectiveTrackOrder = normalizeTrackOrder(trackOrder as string[]);
   const activeTrackIds = effectiveTrackOrder.filter((trackId) =>
     trackId === "main"
-      ? visibleLayers.includes("original") || visibleLayers.includes("remastered")
-      : visibleLayers.includes("diff"),
+      ? effectiveVisibleLayers.includes("original") ||
+        effectiveVisibleLayers.includes("remastered") ||
+        effectiveVisibleLayers.includes("compare")
+      : effectiveVisibleLayers.includes("diff"),
   );
   const trackGap = activeTrackIds.length > 1 ? 12 : 0;
   const perTrackHeight =
@@ -388,6 +401,18 @@ export function WaveformCanvas() {
       ),
     [visibleOriginal, innerWidth, perTrackHeight, state.canvasConfig.density],
   );
+  const comparePath = useMemo(
+    () =>
+      pathFromSamples(
+        visibleCompare,
+        innerWidth,
+        perTrackHeight,
+        -128,
+        127,
+        state.canvasConfig.density,
+      ),
+    [visibleCompare, innerWidth, perTrackHeight, state.canvasConfig.density],
+  );
   const remasteredPath = useMemo(
     () =>
       pathFromSamples(
@@ -437,31 +462,56 @@ export function WaveformCanvas() {
       const top = index * (perTrackHeight + trackGap);
 
       if (trackId === "main") {
-        const showOriginal = visibleLayers.includes("original");
-        const showRemastered = visibleLayers.includes("remastered");
-        const showBoth = showOriginal && showRemastered;
+        const showOriginal = effectiveVisibleLayers.includes("original");
+        const showRemastered = effectiveVisibleLayers.includes("remastered");
+        const showCompare =
+          effectiveVisibleLayers.includes("compare") && compare.length > 0;
+        const lineLayers = [
+          showRemastered
+            ? {
+                path: remasteredPath,
+                stroke: "var(--waveform-remastered)",
+                strokeWidth: 1.25,
+                opacity: 1,
+              }
+            : null,
+          showOriginal
+            ? {
+                path: originalPath,
+                stroke: "var(--waveform-original)",
+                strokeWidth: showRemastered ? 1 : 1.1,
+                opacity: showRemastered ? 0.45 : 1,
+              }
+            : null,
+          showCompare
+            ? {
+                path: comparePath,
+                stroke: "var(--chart-3)",
+                strokeWidth: 1.1,
+                opacity: 0.9,
+              }
+            : null,
+        ].filter((layer) => layer !== null);
+        const [primary, secondary, tertiary] = lineLayers;
         return {
           id: trackId,
-          label:
-            showBoth
-              ? "OG/RM"
-              : showOriginal
-                ? "OG"
-                : "RM",
+          label: [showOriginal ? "OG" : null, showRemastered ? "RM" : null, showCompare ? "CMP" : null]
+            .filter((item): item is string => item !== null)
+            .join("/"),
           minValue: -128,
           maxValue: 127,
-          path: showBoth ? remasteredPath : showOriginal ? originalPath : remasteredPath,
-          stroke: showBoth
-            ? "var(--waveform-remastered)"
-            : showOriginal
-              ? "var(--waveform-original)"
-              : "var(--waveform-remastered)",
-          strokeWidth: showBoth ? 1.25 : showOriginal ? 1 : 1.25,
-          opacity: 1,
-          secondaryPath: showBoth ? originalPath : undefined,
-          secondaryStroke: showBoth ? "var(--waveform-original)" : undefined,
-          secondaryStrokeWidth: 1,
-          secondaryOpacity: showBoth ? 0.45 : 1,
+          path: primary?.path,
+          stroke: primary?.stroke ?? "var(--waveform-original)",
+          strokeWidth: primary?.strokeWidth ?? 1,
+          opacity: primary?.opacity ?? 1,
+          secondaryPath: secondary?.path,
+          secondaryStroke: secondary?.stroke,
+          secondaryStrokeWidth: secondary?.strokeWidth,
+          secondaryOpacity: secondary?.opacity,
+          tertiaryPath: tertiary?.path,
+          tertiaryStroke: tertiary?.stroke,
+          tertiaryStrokeWidth: tertiary?.strokeWidth,
+          tertiaryOpacity: tertiary?.opacity,
           ticks: [-128, -64, 0, 64, 127],
           top,
         };
@@ -486,7 +536,17 @@ export function WaveformCanvas() {
         zeroLine: { value: 0, stroke: "var(--waveform-grid)", strokeWidth: 1 },
       };
     });
-  }, [activeTrackIds, diffPath, originalPath, perTrackHeight, remasteredPath, trackGap, visibleLayers]);
+  }, [
+    activeTrackIds,
+    compare.length,
+    comparePath,
+    diffPath,
+    originalPath,
+    perTrackHeight,
+    remasteredPath,
+    trackGap,
+    effectiveVisibleLayers,
+  ]);
 
   const selectedClipEntry =
     timelineRegions.find((region) => region.region.id === state.selectedRegionId) ?? null;
@@ -691,8 +751,10 @@ export function WaveformCanvas() {
       if (targetIndex >= 0) {
         const currentVisibleOrder = effectiveTrackOrder.filter((trackId) =>
           trackId === "main"
-            ? visibleLayers.includes("original") || visibleLayers.includes("remastered")
-            : visibleLayers.includes("diff"),
+            ? effectiveVisibleLayers.includes("original") ||
+              effectiveVisibleLayers.includes("remastered") ||
+              effectiveVisibleLayers.includes("compare")
+            : effectiveVisibleLayers.includes("diff"),
         );
         const currentIndex = currentVisibleOrder.indexOf(trackDrag.trackId);
         if (currentIndex !== targetIndex) {
@@ -702,8 +764,10 @@ export function WaveformCanvas() {
           const hiddenOrder = effectiveTrackOrder.filter(
             (trackId) =>
               trackId === "main"
-                ? !visibleLayers.includes("original") && !visibleLayers.includes("remastered")
-                : !visibleLayers.includes("diff"),
+                ? !effectiveVisibleLayers.includes("original") &&
+                  !effectiveVisibleLayers.includes("remastered") &&
+                  !effectiveVisibleLayers.includes("compare")
+                : !effectiveVisibleLayers.includes("diff"),
           );
           setTrackOrder([...nextVisibleOrder, ...hiddenOrder]);
         }
@@ -879,11 +943,9 @@ export function WaveformCanvas() {
         </span>
         <ToggleGroup
           type="multiple"
-          value={visibleLayers}
+          value={effectiveVisibleLayers}
           onValueChange={(value) =>
-            setVisibleLayers((Array.isArray(value) ? value : []) as Array<
-              "original" | "remastered" | "diff"
-            >)
+            setVisibleLayers((Array.isArray(value) ? value : []) as VisibleLayer[])
           }
           className="gap-0"
         >
@@ -899,11 +961,18 @@ export function WaveformCanvas() {
           <ToggleGroupItem value="diff" className="h-5 px-1.5 text-[10px]">
             DF
           </ToggleGroupItem>
+          {state.compareWaveform && (
+            <ToggleGroupItem value="compare" className="h-5 px-1.5 text-[10px]">
+              CMP
+            </ToggleGroupItem>
+          )}
         </ToggleGroup>
         <span className="text-[10px] text-muted-foreground">
           {cursorSample !== null
             ? `Cursor ${cursorSample} · ${formatDurationMs(cursorPositionMs)}`
-            : "Left-click/drag cursor · Right-drag pan · C split · Click clip to select · N waveform · Del delete clip"}
+            : state.compareWaveform
+              ? `Compare ${state.compareWaveform.name} · Left-click/drag cursor · Right-drag pan · C split · Click clip to select · N waveform · Del delete clip`
+              : "Left-click/drag cursor · Right-drag pan · C split · Click clip to select · N waveform · Del delete clip"}
         </span>
         <div className="ml-auto flex min-w-48 items-center gap-2">
           <ScanSearch className="size-3.5 text-muted-foreground" />
@@ -975,6 +1044,10 @@ export function WaveformCanvas() {
                   secondaryStroke={track.secondaryStroke}
                   secondaryStrokeWidth={track.secondaryStrokeWidth}
                   secondaryOpacity={track.secondaryOpacity}
+                  tertiaryPath={track.tertiaryPath}
+                  tertiaryStroke={track.tertiaryStroke}
+                  tertiaryStrokeWidth={track.tertiaryStrokeWidth}
+                  tertiaryOpacity={track.tertiaryOpacity}
                   ticks={track.ticks}
                   backgroundFill={track.backgroundFill}
                   backgroundOpacity={track.backgroundOpacity}

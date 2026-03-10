@@ -52,6 +52,7 @@ export interface StudioState {
   effects: StudioEffect[];
   activeEffectIndex: number;
   activeTransformIndex: number;
+  compareWaveform: WaveformData | null;
   viewMode: "original" | "remastered" | "diff" | "overlay";
   zoom: { start: number; end: number };
   families: Record<string, string[]>;
@@ -101,6 +102,7 @@ type Action =
       remasterInfo: EffectRemasterInfo | null;
     }
   | { type: "SET_VIEW_MODE"; mode: StudioState["viewMode"] }
+  | { type: "SET_COMPARE_WAVEFORM"; waveform: WaveformData | null }
   | { type: "SET_ZOOM"; start: number; end: number }
   | { type: "ADD_REGION"; region: Region }
   | { type: "SET_REGIONS"; regions: Region[] }
@@ -147,6 +149,13 @@ function updateSelectedClipChain(
   };
 }
 
+function cloneWaveform(waveform: WaveformData): WaveformData {
+  return {
+    ...waveform,
+    samples: new Int8Array(waveform.samples),
+  };
+}
+
 function cloneTransformStep(step: TransformStep): TransformStep {
   return {
     type: step.type,
@@ -164,10 +173,7 @@ function cloneRegion(region: Region): Region {
 
 function cloneEffect(effect: StudioEffect): StudioEffect {
   return {
-    waveform: {
-      ...effect.waveform,
-      samples: new Int8Array(effect.waveform.samples),
-    },
+    waveform: cloneWaveform(effect.waveform),
     chain: effect.chain.map(cloneTransformStep),
     regions: effect.regions.map(cloneRegion),
     remastered: effect.remastered ? new Int8Array(effect.remastered) : null,
@@ -210,6 +216,9 @@ function createSnapshot(state: StudioState): StudioSnapshot {
     effects: state.effects.map(cloneEffect),
     activeEffectIndex: state.activeEffectIndex,
     activeTransformIndex: state.activeTransformIndex,
+    compareWaveform: state.compareWaveform
+      ? cloneWaveform(state.compareWaveform)
+      : null,
     viewMode: state.viewMode,
     zoom: { ...state.zoom },
     families: buildFamilies(state.effects),
@@ -229,6 +238,9 @@ function fromSnapshot(
     effects: snapshot.effects.map(cloneEffect),
     activeEffectIndex: snapshot.activeEffectIndex,
     activeTransformIndex: snapshot.activeTransformIndex,
+    compareWaveform: snapshot.compareWaveform
+      ? cloneWaveform(snapshot.compareWaveform)
+      : null,
     viewMode: snapshot.viewMode,
     zoom: { ...snapshot.zoom },
     families: buildFamilies(snapshot.effects),
@@ -540,6 +552,13 @@ function studioReducer(state: StudioState, action: Action): StudioState {
     }
     case "SET_VIEW_MODE":
       return { ...state, viewMode: action.mode };
+    case "SET_COMPARE_WAVEFORM": {
+      const s = pushUndo(state);
+      return {
+        ...s,
+        compareWaveform: action.waveform ? cloneWaveform(action.waveform) : null,
+      };
+    }
     case "SET_ZOOM":
       return { ...state, zoom: clampZoomWindow(action.start, action.end) };
     case "ADD_REGION": {
@@ -709,6 +728,7 @@ const initialState: StudioState = {
   effects: [],
   activeEffectIndex: -1,
   activeTransformIndex: -1,
+  compareWaveform: null,
   viewMode: "overlay",
   zoom: { start: 0, end: 1 },
   families: {},

@@ -17,7 +17,7 @@
  *
  *   1. DC Offset Remove  — center the waveform first
  *   2. Envelope Reshape   — boost weak onset, sustain mid, cut tail sharply
- *   3. Normalize          — scale peak to target ±91
+ *   3. Normalize          — scale peak to the target waveform level
  *   4. Clamp              — soft-knee safety net for any remaining overs
  *   5. Smoothing          — tame frequency instability (halfPeriodCV)
  *   6. Tail Trim          — remove dead trailing samples
@@ -29,65 +29,19 @@ import type {
   TransformParams,
   EnvelopePoint,
 } from "./transforms";
-
-// ── Grading (mirrors stats-panel.tsx exactly) ──────────────────────────
-
-type GradeLevel = "good" | "warn" | "bad";
-
-function gradePeak(value: number): GradeLevel {
-  if (value >= 80 && value <= 95) return "good";
-  if (value >= 65 && value <= 110) return "warn";
-  return "bad";
-}
-
-function gradeCrest(value: number): GradeLevel {
-  if (value >= 1.0 && value <= 1.5) return "good";
-  if (value >= 0.5 && value <= 2.0) return "warn";
-  return "bad";
-}
-
-function gradeClipping(count: number): GradeLevel {
-  if (count === 0) return "good";
-  if (count <= 5) return "warn";
-  return "bad";
-}
-
-function gradeDcOffset(value: number): GradeLevel {
-  const abs = Math.abs(value);
-  if (abs <= 12) return "good";
-  if (abs <= 20) return "warn";
-  return "bad";
-}
-
-function gradeSymmetry(value: number): GradeLevel {
-  if (value >= 0.7 && value <= 1.35) return "good";
-  if (value >= 0.5 && value <= 1.8) return "warn";
-  return "bad";
-}
-
-function gradeHalfPeriodCV(value: number): GradeLevel {
-  if (value <= 35) return "good";
-  if (value <= 55) return "warn";
-  return "bad";
-}
-
-function gradeDeadTail(value: number): GradeLevel {
-  if (value <= 5) return "good";
-  if (value <= 15) return "warn";
-  return "bad";
-}
-
-function gradeAttackTime(value: number): GradeLevel {
-  if (value >= 0.1 && value <= 1.5) return "good";
-  if (value <= 4) return "warn";
-  return "bad";
-}
-
-function gradeRange(value: number): GradeLevel {
-  if (value >= 60 && value <= 80) return "good";
-  if (value >= 45 && value <= 95) return "warn";
-  return "bad";
-}
+import {
+  gradeAttackTime,
+  gradeClipping,
+  gradeCrest,
+  gradeDcOffset,
+  gradeDeadTail,
+  gradeHalfPeriodCV,
+  gradePeak,
+  gradeRange,
+  gradeSymmetry,
+  type GradeLevel,
+  type QualityTargetProfile,
+} from "./quality-targets";
 
 // ── Diagnosis ──────────────────────────────────────────────────────────
 
@@ -270,17 +224,21 @@ function needsEnvelopeReshape(
  * The function is pure — no side effects. The caller is responsible
  * for dispatching the chain into the reducer.
  */
-export function computeAutoFix(stats: WaveformStats): AutoFixResult {
+export function computeAutoFix(
+  stats: WaveformStats,
+  qualityTargets: QualityTargetProfile,
+): AutoFixResult {
+  const targets = qualityTargets;
   // Grade every metric
-  const peakG = gradePeak(stats.peak);
-  const crestG = gradeCrest(stats.crestFactor);
-  const clipG = gradeClipping(stats.clippingCount);
-  const dcG = gradeDcOffset(stats.dcOffset);
-  const symG = gradeSymmetry(stats.symmetryRatio);
-  const hpG = gradeHalfPeriodCV(stats.halfPeriodCV);
-  const tailG = gradeDeadTail(stats.deadTailPercent);
-  const attackG = gradeAttackTime(stats.attackTimeMs);
-  const rangeG = gradeRange(stats.rangeUtilization);
+  const peakG = gradePeak(stats.peak, targets);
+  const crestG = gradeCrest(stats.crestFactor, targets);
+  const clipG = gradeClipping(stats.clippingCount, targets);
+  const dcG = gradeDcOffset(stats.dcOffset, targets);
+  const symG = gradeSymmetry(stats.symmetryRatio, targets);
+  const hpG = gradeHalfPeriodCV(stats.halfPeriodCV, targets);
+  const tailG = gradeDeadTail(stats.deadTailPercent, targets);
+  const attackG = gradeAttackTime(stats.attackTimeMs, targets);
+  const rangeG = gradeRange(stats.rangeUtilization, targets);
 
   const chain: TransformStep[] = [];
 
@@ -321,9 +279,14 @@ export function computeAutoFix(stats: WaveformStats): AutoFixResult {
   }
 
   // ── 3. Normalize ─────────────────────────────────────────────────
-  // Fixes: peak, rangeUtilization, clipping (by scaling to target ±91)
+  // Fixes: peak, rangeUtilization, clipping (by scaling to target profile)
   // Comes after envelope reshape so it scales the corrected shape.
   const needNormalize = isBad(peakG) || isBad(rangeG) || isBad(clipG);
+
+  const normalizeTargetLevel = Math.max(
+    1,
+    Math.min(127, Math.round(targets.peak.normalizeLevel)),
+  );
 
   if (needNormalize) {
     chain.push({
@@ -331,7 +294,7 @@ export function computeAutoFix(stats: WaveformStats): AutoFixResult {
       enabled: true,
       params: {
         mode: "peak",
-        targetLevel: 91,
+        targetLevel: normalizeTargetLevel,
       } as TransformParams["normalize"],
     });
   }
@@ -344,7 +307,11 @@ export function computeAutoFix(stats: WaveformStats): AutoFixResult {
     chain.push({
       type: "clamp",
       enabled: true,
-      params: { min: -91, max: 91, softKnee: 8 } as TransformParams["clamp"],
+      params: {
+        min: targets.peak.clampMin,
+        max: targets.peak.clampMax,
+        softKnee: 8,
+      } as TransformParams["clamp"],
     });
   }
 
@@ -399,7 +366,7 @@ export function computeAutoFix(stats: WaveformStats): AutoFixResult {
       label: "Peak Amp",
       grade: peakG,
       currentValue: `±${stats.peak}`,
-      fix: needNormalize ? "Normalize → ±91" : null,
+      fix: needNormalize ? `Normalize → ${targets.peak.label}` : null,
     },
     {
       metric: "crestFactor",
@@ -434,7 +401,7 @@ export function computeAutoFix(stats: WaveformStats): AutoFixResult {
       label: "Range Use",
       grade: rangeG,
       currentValue: `${stats.rangeUtilization.toFixed(0)}%`,
-      fix: needNormalize ? "Normalize → 72%" : null,
+      fix: needNormalize ? `Normalize → ${targets.rangeUtilization.label}` : null,
     },
     {
       metric: "halfPeriodCV",

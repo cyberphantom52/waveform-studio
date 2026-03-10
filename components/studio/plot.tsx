@@ -15,6 +15,10 @@ interface PlotProps {
   secondaryStroke?: string;
   secondaryStrokeWidth?: number;
   secondaryOpacity?: number;
+  tertiaryPath?: string;
+  tertiaryStroke?: string;
+  tertiaryStrokeWidth?: number;
+  tertiaryOpacity?: number;
   ticks?: number[];
   backgroundFill?: string;
   backgroundOpacity?: number;
@@ -57,6 +61,10 @@ export function Plot({
   secondaryStroke,
   secondaryStrokeWidth = 1,
   secondaryOpacity = 1,
+  tertiaryPath,
+  tertiaryStroke,
+  tertiaryStrokeWidth = 1,
+  tertiaryOpacity = 1,
   ticks,
   backgroundFill = "var(--background)",
   backgroundOpacity = 1,
@@ -192,6 +200,22 @@ export function Plot({
             stroke={secondaryStroke}
             strokeWidth={secondaryStrokeWidth}
             opacity={secondaryOpacity}
+          />
+        </g>
+      )}
+
+
+      {tertiaryPath && tertiaryStroke && (
+        <g
+          clipPath={`url(#${clipId})`}
+          transform={`translate(${plotInnerX},${plotInnerY}) scale(${scaleX}, ${scaleY})`}
+        >
+          <path
+            d={tertiaryPath}
+            fill="none"
+            stroke={tertiaryStroke}
+            strokeWidth={tertiaryStrokeWidth}
+            opacity={tertiaryOpacity}
           />
         </g>
       )}

@@ -3,7 +3,6 @@ import type { EffectMetadata, WaveformData } from "@/lib/dsp/waveform";
 import {
   cloneSamples,
   parseBinFile,
-  parseEffectJson,
   waveformToArrayBuffer,
 } from "@/lib/dsp/waveform";
 import {
@@ -16,6 +15,8 @@ import {
 } from "@/lib/dsp/region";
 import type { FamilyPreset, StudioEffect, StudioState } from "@/lib/studio-context";
 import type { Region } from "@/lib/dsp/region";
+
+export const BROWSE_WAVEFORM_DRAG_TYPE = "application/x-waveform-studio-effect-id";
 
 export function createStudioEffect(
   waveform: WaveformData,
@@ -47,29 +48,25 @@ export async function importStudioFiles(
   metadata: Record<string, EffectMetadata>;
 }> {
   const fileList = Array.from(files);
-  let metadata: Record<string, EffectMetadata> = {};
+  const metadata: Record<string, EffectMetadata> = {};
   const bins: WaveformData[] = [];
 
   for (const file of fileList) {
-    if (file.name.endsWith(".json")) {
-      metadata = {
-        ...metadata,
-        ...parseEffectJson(await file.text()),
-      };
-      continue;
-    }
-
     if (file.name.endsWith(".bin")) {
       bins.push(parseBinFile(await file.arrayBuffer(), file.name));
     }
   }
 
-  const effects = bins.map((waveform) => {
-    const meta = metadata[`${waveform.name}.bin`] ?? metadata[waveform.name];
-    return createStudioEffect(waveform, globalDefaultPlayRateHz, meta);
-  });
+  const effects = bins.map((waveform) =>
+    createStudioEffect(waveform, globalDefaultPlayRateHz),
+  );
 
   return { effects, metadata };
+}
+
+export async function importCompareWaveform(file: File) {
+  if (!file.name.endsWith(".bin")) return null;
+  return parseBinFile(await file.arrayBuffer(), file.name);
 }
 
 export function promptDownload(filename: string, blob: Blob) {

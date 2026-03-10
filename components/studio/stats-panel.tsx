@@ -3,6 +3,20 @@
 import { useStudio, useStudioDispatch } from "@/lib/studio-context";
 import { computeStats, type WaveformStats } from "@/lib/dsp/stats";
 import { computeAutoFix } from "@/lib/dsp/auto-fix";
+import {
+  createQualityTargetProfile,
+  gradeAttackTime,
+  gradeClipping,
+  gradeCrest,
+  gradeDcOffset,
+  gradeDeadTail,
+  gradeHalfPeriodCV,
+  gradePeak,
+  gradeRange,
+  gradeSymmetry,
+  type GradeLevel,
+  type QualityTargetProfile,
+} from "@/lib/dsp/quality-targets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -13,84 +27,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { Wand2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Upload, Wand2, X } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  BROWSE_WAVEFORM_DRAG_TYPE,
+  importCompareWaveform,
+} from "@/lib/studio-io";
 
-// Premium reference targets (from haptic_rtp.bin per-pulse analysis)
-//
-// The reference waveform has asymmetric half-periods by design ([71, 71, 35, 35, 71])
-// which produces a CV of ~31% and symmetry of ~1.30. These are intentional structural
-// features, not defects, so the thresholds are calibrated to accept them.
-// DC offset of the significant signal content is ~10 (the positive plateaus are
-// slightly longer than negative), so the threshold allows up to ±12.
-const PREMIUM_TARGETS = {
-  peak: { label: "±91" },
-  crestFactor: { label: "~1.15" },
-  dcOffset: { label: "<±12" },
-  symmetryRatio: { label: "~1.0" },
-  attackTimeMs: { label: "<1.5ms" },
-  rangeUtilization: { label: "~72%" },
-  halfPeriodCV: { label: "<35%" },
-  clippingCount: { label: "0" },
-  deadTailPercent: { label: "<5%" },
-};
-
-type GradeLevel = "good" | "warn" | "bad";
-
-function gradePeak(value: number): GradeLevel {
-  if (value >= 80 && value <= 95) return "good";
-  if (value >= 65 && value <= 110) return "warn";
-  return "bad";
-}
-
-function gradeCrest(value: number): GradeLevel {
-  if (value >= 1.0 && value <= 1.5) return "good";
-  if (value >= 0.5 && value <= 2.0) return "warn";
-  return "bad";
-}
-
-function gradeClipping(count: number): GradeLevel {
-  if (count === 0) return "good";
-  if (count <= 5) return "warn";
-  return "bad";
-}
-
-function gradeDcOffset(value: number): GradeLevel {
-  const abs = Math.abs(value);
-  if (abs <= 12) return "good";
-  if (abs <= 20) return "warn";
-  return "bad";
-}
-
-function gradeSymmetry(value: number): GradeLevel {
-  if (value >= 0.7 && value <= 1.35) return "good";
-  if (value >= 0.5 && value <= 1.8) return "warn";
-  return "bad";
-}
-
-function gradeHalfPeriodCV(value: number): GradeLevel {
-  if (value <= 35) return "good";
-  if (value <= 55) return "warn";
-  return "bad";
-}
-
-function gradeDeadTail(value: number): GradeLevel {
-  if (value <= 5) return "good";
-  if (value <= 15) return "warn";
-  return "bad";
-}
-
-function gradeAttackTime(value: number): GradeLevel {
-  if (value >= 0.1 && value <= 1.5) return "good";
-  if (value <= 4) return "warn";
-  return "bad";
-}
-
-function gradeRange(value: number): GradeLevel {
-  if (value >= 60 && value <= 80) return "good";
-  if (value >= 45 && value <= 95) return "warn";
-  return "bad";
-}
+// Quality targets come from the imported compare waveform when available.
 
 const GRADE_COLORS: Record<GradeLevel, string> = {
   good: "text-emerald-500",
@@ -169,23 +113,26 @@ function WaveformSection({
   label,
   variant,
   clippedOverride,
+  qualityTargets,
   children,
 }: {
   stats: WaveformStats;
   label: string;
   variant: "secondary" | "default";
   clippedOverride?: number;
+  qualityTargets: QualityTargetProfile | null;
   children?: React.ReactNode;
 }) {
-  const peakGrade = gradePeak(stats.peak);
-  const crestGrade = gradeCrest(stats.crestFactor);
-  const dcGrade = gradeDcOffset(stats.dcOffset);
-  const symGrade = gradeSymmetry(stats.symmetryRatio);
-  const attackGrade = gradeAttackTime(stats.attackTimeMs);
-  const rangeGrade = gradeRange(stats.rangeUtilization);
-  const hpGrade = gradeHalfPeriodCV(stats.halfPeriodCV);
-  const clipGrade = gradeClipping(clippedOverride ?? stats.clippingCount);
-  const tailGrade = gradeDeadTail(stats.deadTailPercent);
+  const hasQualityTargets = qualityTargets !== null;
+  const peakGrade = qualityTargets ? gradePeak(stats.peak, qualityTargets) : null;
+  const crestGrade = qualityTargets ? gradeCrest(stats.crestFactor, qualityTargets) : null;
+  const dcGrade = qualityTargets ? gradeDcOffset(stats.dcOffset, qualityTargets) : null;
+  const symGrade = qualityTargets ? gradeSymmetry(stats.symmetryRatio, qualityTargets) : null;
+  const attackGrade = qualityTargets ? gradeAttackTime(stats.attackTimeMs, qualityTargets) : null;
+  const rangeGrade = qualityTargets ? gradeRange(stats.rangeUtilization, qualityTargets) : null;
+  const hpGrade = qualityTargets ? gradeHalfPeriodCV(stats.halfPeriodCV, qualityTargets) : null;
+  const clipGrade = qualityTargets ? gradeClipping(clippedOverride ?? stats.clippingCount, qualityTargets) : null;
+  const tailGrade = qualityTargets ? gradeDeadTail(stats.deadTailPercent, qualityTargets) : null;
 
   const grades = [
     peakGrade,
@@ -197,7 +144,7 @@ function WaveformSection({
     hpGrade,
     clipGrade,
     tailGrade,
-  ];
+  ].filter((grade): grade is GradeLevel => grade !== null);
   const goodCount = grades.filter((g) => g === "good").length;
   const warnCount = grades.filter((g) => g === "warn").length;
   const badCount = grades.filter((g) => g === "bad").length;
@@ -210,6 +157,9 @@ function WaveformSection({
           {label}
         </Badge>
         <div className="flex items-center gap-1.5">
+          {!hasQualityTargets && (
+            <span className="text-[9px] text-muted-foreground">No target</span>
+          )}
           {goodCount > 0 && (
             <span className="text-[9px] font-medium text-emerald-500">
               {goodCount}✓
@@ -229,63 +179,73 @@ function WaveformSection({
       </div>
 
       {/* Quality metrics with color grading */}
-      <QualityRow
-        label="Peak Amp"
-        value={`±${stats.peak}`}
-        grade={peakGrade}
-        target={PREMIUM_TARGETS.peak.label}
-      />
-      <QualityRow
-        label="Crest Factor"
-        value={stats.crestFactor.toFixed(2)}
-        grade={crestGrade}
-        target={PREMIUM_TARGETS.crestFactor.label}
-      />
-      <QualityRow
-        label="DC Offset"
-        value={stats.dcOffset.toFixed(1)}
-        grade={dcGrade}
-        target={PREMIUM_TARGETS.dcOffset.label}
-      />
-      <QualityRow
-        label="Symmetry"
-        value={stats.symmetryRatio.toFixed(2)}
-        grade={symGrade}
-        target={PREMIUM_TARGETS.symmetryRatio.label}
-      />
-      <QualityRow
-        label="Attack"
-        value={`${stats.attackTimeMs.toFixed(1)}ms`}
-        grade={attackGrade}
-        target={PREMIUM_TARGETS.attackTimeMs.label}
-      />
-      <QualityRow
-        label="Range Use"
-        value={`${stats.rangeUtilization.toFixed(0)}%`}
-        grade={rangeGrade}
-        target={PREMIUM_TARGETS.rangeUtilization.label}
-      />
-      <QualityRow
-        label="Freq Stab"
-        value={`${stats.halfPeriodCV.toFixed(1)}%`}
-        grade={hpGrade}
-        target={PREMIUM_TARGETS.halfPeriodCV.label}
-      />
-      <QualityRow
-        label="Clipping"
-        value={(clippedOverride ?? stats.clippingCount).toString()}
-        grade={clipGrade}
-        target={PREMIUM_TARGETS.clippingCount.label}
-      />
-      <QualityRow
-        label="Dead Tail"
-        value={`${stats.deadTailPercent.toFixed(1)}%`}
-        grade={tailGrade}
-        target={PREMIUM_TARGETS.deadTailPercent.label}
-      />
+      {qualityTargets && (
+        <>
+          <QualityRow
+            label="Peak Amp"
+            value={`±${stats.peak}`}
+            grade={peakGrade!}
+            target={qualityTargets.peak.label}
+          />
+          <QualityRow
+            label="Crest Factor"
+            value={stats.crestFactor.toFixed(2)}
+            grade={crestGrade!}
+            target={qualityTargets.crestFactor.label}
+          />
+          <QualityRow
+            label="DC Offset"
+            value={stats.dcOffset.toFixed(1)}
+            grade={dcGrade!}
+            target={qualityTargets.dcOffset.label}
+          />
+          <QualityRow
+            label="Symmetry"
+            value={stats.symmetryRatio.toFixed(2)}
+            grade={symGrade!}
+            target={qualityTargets.symmetryRatio.label}
+          />
+          <QualityRow
+            label="Attack"
+            value={`${stats.attackTimeMs.toFixed(1)}ms`}
+            grade={attackGrade!}
+            target={qualityTargets.attackTimeMs.label}
+          />
+          <QualityRow
+            label="Range Use"
+            value={`${stats.rangeUtilization.toFixed(0)}%`}
+            grade={rangeGrade!}
+            target={qualityTargets.rangeUtilization.label}
+          />
+          <QualityRow
+            label="Freq Stab"
+            value={`${stats.halfPeriodCV.toFixed(1)}%`}
+            grade={hpGrade!}
+            target={qualityTargets.halfPeriodCV.label}
+          />
+          <QualityRow
+            label="Clipping"
+            value={(clippedOverride ?? stats.clippingCount).toString()}
+            grade={clipGrade!}
+            target={qualityTargets.clippingCount.label}
+          />
+          <QualityRow
+            label="Dead Tail"
+            value={`${stats.deadTailPercent.toFixed(1)}%`}
+            grade={tailGrade!}
+            target={qualityTargets.deadTailPercent.label}
+          />
+        </>
+      )}
 
       {/* Slot for extra content (e.g. auto-fix button) */}
       {children}
+
+      {!qualityTargets && (
+        <div className="px-2 py-1 text-[10px] text-muted-foreground">
+          Load a compare target to enable quality grading and Auto Fix.
+        </div>
+      )}
 
       {/* Supplementary raw stats */}
       <div className="pt-1">
@@ -311,11 +271,20 @@ function WaveformSection({
   );
 }
 
-function AutoFixButton({ stats }: { stats: WaveformStats }) {
+function AutoFixButton({
+  stats,
+  qualityTargets,
+}: {
+  stats: WaveformStats;
+  qualityTargets: QualityTargetProfile;
+}) {
   const dispatch = useStudioDispatch();
   const [showDetails, setShowDetails] = useState(false);
 
-  const result = useMemo(() => computeAutoFix(stats), [stats]);
+  const result = useMemo(
+    () => computeAutoFix(stats, qualityTargets),
+    [qualityTargets, stats],
+  );
 
   // Hide when all metrics are already good — nothing to fix
   if (result.issueCount === 0) return null;
@@ -464,7 +433,34 @@ function DeltaSection({
 
 export function StatsPanel() {
   const state = useStudio();
+  const dispatch = useStudioDispatch();
+  const compareFileRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const effect = state.effects[state.activeEffectIndex];
+  const importCompareFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const file = Array.from(files).find((entry) => entry.name.endsWith(".bin"));
+      if (!file) return;
+      const waveform = await importCompareWaveform(file);
+      if (!waveform) return;
+      dispatch({ type: "SET_COMPARE_WAVEFORM", waveform });
+    },
+    [dispatch],
+  );
+  const compareStats = useMemo(
+    () =>
+      state.compareWaveform
+        ? computeStats(
+            state.compareWaveform.samples,
+            state.compareWaveform.sampleRate,
+          )
+        : null,
+    [state.compareWaveform],
+  );
+  const qualityTargets = useMemo(
+    () => (compareStats ? createQualityTargetProfile(compareStats) : null),
+    [compareStats],
+  );
 
   const originalStats =
     effect?.remasterInfo?.originalStats ??
@@ -480,52 +476,120 @@ export function StatsPanel() {
       ? computeStats(effect.remastered, effect.waveform.sampleRate)
       : originalStats);
 
-  if (!effect || !originalStats || !remasteredStats) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-xs text-muted-foreground">No data</p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full flex-col">
+      <input
+        ref={compareFileRef}
+        type="file"
+        accept=".bin"
+        className="hidden"
+        onChange={(event) => {
+          if (!event.target.files) return;
+          void importCompareFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
+
       <div className="flex items-center border-b border-border px-2 py-1">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
           Statistics
         </span>
+        {state.compareWaveform && (
+          <Badge variant="outline" className="ml-auto text-[10px]">
+            Target {state.compareWaveform.name}
+          </Badge>
+        )}
+      </div>
+
+      <div
+        className={cn(
+          "border-b border-border px-2 py-2 transition-colors",
+          isDragging ? "bg-accent/50" : "bg-card",
+        )}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          setIsDragging(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragging(false);
+          void importCompareFiles(event.dataTransfer.files);
+        }}
+      >
+        <button
+          type="button"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border px-2 py-3 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+          onClick={() => compareFileRef.current?.click()}
+        >
+          <Upload className="size-3.5" />
+          {state.compareWaveform
+            ? `Replace target or drop .bin · ${state.compareWaveform.name}`
+            : "Add target or drop .bin to enable compare + Auto Fix"}
+        </button>
+        {state.compareWaveform && (
+          <div className="mt-2 flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1.5 px-2 text-[10px]"
+              onClick={() => dispatch({ type: "SET_COMPARE_WAVEFORM", waveform: null })}
+            >
+              <X className="size-3" />
+              Clear target
+            </Button>
+          </div>
+        )}
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="py-1">
-          {/* ── Original ── */}
-          <WaveformSection
-            stats={originalStats}
-            label="Original"
-            variant="secondary"
-          />
+        {!effect || !originalStats || !remasteredStats ? (
+          <div className="flex h-24 items-center justify-center">
+            <p className="text-xs text-muted-foreground">No data</p>
+          </div>
+        ) : (
+          <div className="py-1">
+            {/* ── Original ── */}
+            <WaveformSection
+              stats={originalStats}
+              label="Original"
+              variant="secondary"
+              qualityTargets={qualityTargets}
+            />
 
-          {/* ── Remastered (always visible) ── */}
-          <Separator className="my-1" />
-          <WaveformSection
-            stats={remasteredStats}
-            label="Remastered"
-            variant="default"
-            clippedOverride={effect.remasterInfo?.clippedSamples}
-          >
-            {/* Auto Fix lives inside the Remastered section —
-                it diagnoses the remastered stats so once all metrics
-                are good after applying fixes, the button disappears. */}
-            <AutoFixButton stats={remasteredStats} />
-          </WaveformSection>
+            {/* ── Remastered (always visible) ── */}
+            <Separator className="my-1" />
+            <WaveformSection
+              stats={remasteredStats}
+              label="Remastered"
+              variant="default"
+              clippedOverride={effect.remasterInfo?.clippedSamples}
+              qualityTargets={qualityTargets}
+            >
+              {qualityTargets && (
+                <AutoFixButton
+                  stats={remasteredStats}
+                  qualityTargets={qualityTargets}
+                />
+              )}
+            </WaveformSection>
 
-          {/* ── Delta (always visible) ── */}
-          <Separator className="my-1" />
-          <DeltaSection
-            originalStats={originalStats}
-            remasteredStats={remasteredStats}
-          />
-        </div>
+            {/* ── Delta (always visible) ── */}
+            <Separator className="my-1" />
+            <DeltaSection
+              originalStats={originalStats}
+              remasteredStats={remasteredStats}
+            />
+          </div>
+        )}
       </ScrollArea>
     </div>
   );

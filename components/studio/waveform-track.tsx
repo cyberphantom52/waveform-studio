@@ -28,6 +28,10 @@ interface WaveformTrackProps {
   secondaryStroke?: string;
   secondaryStrokeWidth?: number;
   secondaryOpacity?: number;
+  tertiaryPath?: string;
+  tertiaryStroke?: string;
+  tertiaryStrokeWidth?: number;
+  tertiaryOpacity?: number;
   ticks?: number[];
   backgroundFill?: string;
   backgroundOpacity?: number;
@@ -56,6 +60,10 @@ export function WaveformTrack({
   secondaryStroke,
   secondaryStrokeWidth = 1,
   secondaryOpacity = 1,
+  tertiaryPath,
+  tertiaryStroke,
+  tertiaryStrokeWidth = 1,
+  tertiaryOpacity = 1,
   ticks,
   backgroundFill,
   backgroundOpacity,
@@ -138,6 +146,10 @@ export function WaveformTrack({
         secondaryStroke={secondaryStroke}
         secondaryStrokeWidth={secondaryStrokeWidth}
         secondaryOpacity={secondaryOpacity}
+        tertiaryPath={tertiaryPath}
+        tertiaryStroke={tertiaryStroke}
+        tertiaryStrokeWidth={tertiaryStrokeWidth}
+        tertiaryOpacity={tertiaryOpacity}
         ticks={ticks}
         backgroundFill={backgroundFill}
         backgroundOpacity={backgroundOpacity}
