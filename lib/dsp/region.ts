@@ -1,7 +1,4 @@
-import {
-  type TransformStep,
-  applyTransformChain,
-} from "./transforms";
+import { type TransformStep, applyTransformChain } from "./transforms";
 
 export interface Region {
   id: string;
@@ -42,11 +39,16 @@ function resampleClip(samples: Int8Array, targetLength: number) {
     const frac = srcIdx - i0;
 
     const p0 = samples[Math.max(0, i0 - 1)] ?? samples[0] ?? 0;
-    const p1 = samples[Math.min(i0, lastSourceIndex)] ?? samples[lastSourceIndex] ?? 0;
+    const p1 =
+      samples[Math.min(i0, lastSourceIndex)] ?? samples[lastSourceIndex] ?? 0;
     const p2 =
-      samples[Math.min(i0 + 1, lastSourceIndex)] ?? samples[lastSourceIndex] ?? 0;
+      samples[Math.min(i0 + 1, lastSourceIndex)] ??
+      samples[lastSourceIndex] ??
+      0;
     const p3 =
-      samples[Math.min(i0 + 2, lastSourceIndex)] ?? samples[lastSourceIndex] ?? 0;
+      samples[Math.min(i0 + 2, lastSourceIndex)] ??
+      samples[lastSourceIndex] ??
+      0;
 
     const a = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
     const b = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
@@ -94,7 +96,10 @@ function createRegionSegment(
     end,
     crossfadeSamples: Math.max(
       0,
-      Math.min(region.crossfadeSamples, Math.floor(Math.max(1, timelineLength) / 2)),
+      Math.min(
+        region.crossfadeSamples,
+        Math.floor(Math.max(1, timelineLength) / 2),
+      ),
     ),
     chain: cloneRegionChain(region),
   };
@@ -164,7 +169,8 @@ export function getRegionSourceLength(region: Region) {
 export function getTimelineLength(regions: Region[], fallbackLength: number) {
   if (regions.length === 0) return fallbackLength;
   return regions.reduce(
-    (max, region) => Math.max(max, region.timelineStart + getRegionLength(region)),
+    (max, region) =>
+      Math.max(max, region.timelineStart + getRegionLength(region)),
     0,
   );
 }
@@ -265,9 +271,11 @@ export function splitTimelineRegionsAtSelection(
     const localStart = Math.max(0, safeStart - timelineStart);
     const localEnd = Math.min(length, safeEnd - timelineStart);
     let sourceStart =
-      region.start + Math.round((localStart / Math.max(1, length)) * sourceLength);
+      region.start +
+      Math.round((localStart / Math.max(1, length)) * sourceLength);
     let sourceEnd =
-      region.start + Math.round((localEnd / Math.max(1, length)) * sourceLength);
+      region.start +
+      Math.round((localEnd / Math.max(1, length)) * sourceLength);
 
     if (localStart > 0 && sourceStart <= region.start) {
       sourceStart = Math.min(region.end - 1, region.start + 1);
@@ -332,6 +340,96 @@ export function splitTimelineRegionsAtSelection(
   return { regions: normalizedRegions, selectedIds };
 }
 
+export function splitTimelineRegionsAtCursor(
+  regions: Region[],
+  cursorSample: number,
+  sampleCount: number,
+) {
+  if (sampleCount <= 0) return { regions: [], selectedIds: [] as string[] };
+
+  const baseRegions =
+    regions.length > 0
+      ? regions.map(cloneRegion)
+      : [createTimelineRegion(0, sampleCount, 0, sampleCount, "Clip 1")];
+  const totalLength = getTimelineLength(baseRegions, sampleCount);
+  const safeCursor = Math.max(0, Math.min(cursorSample, totalLength));
+
+  const nextRegions: Region[] = [];
+  const selectedIds: string[] = [];
+  let clipIndex = baseRegions.length;
+  const nextName = () => {
+    clipIndex += 1;
+    return `Clip ${clipIndex}`;
+  };
+
+  for (const region of baseRegions) {
+    const length = getRegionLength(region);
+    const sourceLength = getRegionSourceLength(region);
+    const timelineStart = region.timelineStart;
+    const timelineEnd = timelineStart + length;
+
+    if (safeCursor <= timelineStart || safeCursor >= timelineEnd) {
+      nextRegions.push(region);
+      continue;
+    }
+
+    const localCursor = safeCursor - timelineStart;
+    if (localCursor <= 0 || localCursor >= length) {
+      nextRegions.push(region);
+      continue;
+    }
+
+    const leftSourceStart = region.start;
+    let leftSourceEnd = region.end;
+    let rightSourceStart = region.start;
+    const rightSourceEnd = region.end;
+
+    if (sourceLength > 1) {
+      const sourceCursor = Math.max(
+        region.start + 1,
+        Math.min(
+          region.start +
+            Math.round((localCursor / Math.max(1, length)) * sourceLength),
+          region.end - 1,
+        ),
+      );
+      leftSourceEnd = sourceCursor;
+      rightSourceStart = sourceCursor;
+    }
+
+    nextRegions.push(
+      createTimelineRegion(
+        timelineStart,
+        localCursor,
+        leftSourceStart,
+        leftSourceEnd,
+        region.name,
+        region,
+      ),
+    );
+
+    const rightRegion = createTimelineRegion(
+      safeCursor,
+      length - localCursor,
+      rightSourceStart,
+      rightSourceEnd,
+      nextName(),
+      region,
+    );
+    nextRegions.push(rightRegion);
+    selectedIds.push(rightRegion.id);
+  }
+
+  const normalizedRegions = nextRegions
+    .sort((left, right) => left.timelineStart - right.timelineStart)
+    .map((region, index) => ({
+      ...region,
+      name: `Clip ${index + 1}`,
+    }));
+
+  return { regions: normalizedRegions, selectedIds };
+}
+
 function buildRegionChain(region: Region): TransformStep[] {
   return cloneRegionChain(region);
 }
@@ -341,7 +439,7 @@ function crossfadeBlend(
   regionResult: Int8Array,
   regionStart: number,
   regionEnd: number,
-  crossfade: number
+  crossfade: number,
 ) {
   const out = new Int8Array(base.length);
   out.set(base);
@@ -362,7 +460,9 @@ function crossfadeBlend(
     }
 
     blend = Math.max(0, Math.min(1, blend));
-    out[i] = Math.round(base[i] * (1 - blend) + regionResult[regionIdx] * blend);
+    out[i] = Math.round(
+      base[i] * (1 - blend) + regionResult[regionIdx] * blend,
+    );
   }
 
   return out;
@@ -370,7 +470,7 @@ function crossfadeBlend(
 
 export function applyRegions(
   samples: Int8Array,
-  regions: Region[]
+  regions: Region[],
 ): RegionApplyResult {
   let result: Int8Array = Int8Array.from(samples);
   let clippedTotal = 0;
@@ -384,7 +484,8 @@ export function applyRegions(
     if (chain.length === 0 || safeEnd <= safeStart) continue;
 
     const copy = result.slice(safeStart, safeEnd);
-    const { result: transformed, clippedTotal: regionClipped } = applyTransformChain(copy, chain);
+    const { result: transformed, clippedTotal: regionClipped } =
+      applyTransformChain(copy, chain);
     clippedTotal += regionClipped;
 
     result = crossfadeBlend(
@@ -392,7 +493,7 @@ export function applyRegions(
       transformed,
       safeStart,
       safeEnd,
-      region.crossfadeSamples
+      region.crossfadeSamples,
     );
   }
 

@@ -6,11 +6,6 @@ interface TimelineRegionEntry {
   timelineEnd: number;
 }
 
-interface SelectionBounds {
-  left: number;
-  right: number;
-}
-
 interface ClipTrackProps {
   innerWidth: number;
   timelineTop: number;
@@ -18,12 +13,11 @@ interface ClipTrackProps {
   timelineBlockTop: number;
   timelineBlockHeight: number;
   clipHandleWidth: number;
-  selectionHandleWidth: number;
   timelineRegions: TimelineRegionEntry[];
   startSample: number;
   endSample: number;
   selectedRegionId: string | null;
-  selectionBounds: SelectionBounds | null;
+  cursorX: number | null;
   xForSample: (sample: number) => number;
   onClipClick: (regionId: string) => void;
 }
@@ -35,12 +29,11 @@ export function ClipTrack({
   timelineBlockTop,
   timelineBlockHeight,
   clipHandleWidth,
-  selectionHandleWidth,
   timelineRegions,
   startSample,
   endSample,
   selectedRegionId,
-  selectionBounds,
+  cursorX,
   xForSample,
   onClipClick,
 }: ClipTrackProps) {
@@ -137,64 +130,16 @@ export function ClipTrack({
         );
       })}
 
-      {selectionBounds && (
-        <rect
-          x={selectionBounds.left}
-          y={timelineBlockTop}
-          width={selectionBounds.right - selectionBounds.left}
-          height={timelineBlockHeight}
-          rx={4}
-          fill="var(--waveform-accent)"
-          opacity={0.25}
+      {cursorX !== null && (
+        <line
+          x1={cursorX}
+          x2={cursorX}
+          y1={timelineBlockTop - 2}
+          y2={timelineBlockTop + timelineBlockHeight + 2}
+          stroke="var(--waveform-accent)"
+          strokeWidth={2}
+          opacity={0.95}
         />
-      )}
-
-      {selectionBounds && (
-        <>
-          <rect
-            data-selection-body
-            x={selectionBounds.left}
-            y={timelineBlockTop}
-            width={selectionBounds.right - selectionBounds.left}
-            height={timelineBlockHeight}
-            fill="transparent"
-            style={{ cursor: "grab" }}
-          />
-          <rect
-            data-selection-handle="start"
-            x={selectionBounds.left - selectionHandleWidth / 2}
-            y={timelineBlockTop - 2}
-            width={selectionHandleWidth}
-            height={timelineBlockHeight + 4}
-            fill="transparent"
-            style={{ cursor: "ew-resize" }}
-          />
-          <rect
-            data-selection-handle="end"
-            x={selectionBounds.right - selectionHandleWidth / 2}
-            y={timelineBlockTop - 2}
-            width={selectionHandleWidth}
-            height={timelineBlockHeight + 4}
-            fill="transparent"
-            style={{ cursor: "ew-resize" }}
-          />
-          <line
-            x1={selectionBounds.left}
-            x2={selectionBounds.left}
-            y1={timelineBlockTop - 2}
-            y2={timelineBlockTop + timelineBlockHeight + 2}
-            stroke="var(--waveform-accent)"
-            strokeWidth={2}
-          />
-          <line
-            x1={selectionBounds.right}
-            x2={selectionBounds.right}
-            y1={timelineBlockTop - 2}
-            y2={timelineBlockTop + timelineBlockHeight + 2}
-            stroke="var(--waveform-accent)"
-            strokeWidth={2}
-          />
-        </>
       )}
     </>
   );

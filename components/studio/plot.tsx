@@ -103,6 +103,7 @@ export function Plot({
         height={height}
         fill="transparent"
         onPointerDown={onPointerDown}
+        style={{ cursor: onPointerDown ? "crosshair" : undefined }}
       />
 
       {separatorTop && (

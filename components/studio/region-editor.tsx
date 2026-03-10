@@ -57,7 +57,7 @@ export function RegionEditor() {
           <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 px-4 text-center">
             <Waves className="size-4 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">
-              Select a clip on the timeline to inspect it. Use left-drag + `C` to split clips.
+              Select a clip on the timeline to inspect it. Place the cursor on the waveform and press `C` to split clips.
             </p>
           </div>
         ) : (
